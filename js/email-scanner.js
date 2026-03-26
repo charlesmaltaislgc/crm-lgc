@@ -1,0 +1,404 @@
+// ===== CRM LGC - Email Lead Detection Module =====
+// Scans Outlook emails, detects leads, matches existing clients
+
+const EmailScanner = (() => {
+    const LEAD_KEYWORDS = [
+        'fenêtre', 'fenetre', 'porte', 'vitre', 'vitrage', 'moustiquaire',
+        'porte-patio', 'porte patio', 'porte d\'entrée', 'porte entree',
+        'soumission', 'estimation', 'prix', 'coût', 'cout', 'devis',
+        'remplacer', 'remplacement', 'changer', 'installer', 'installation',
+        'rénover', 'renover', 'rénovation', 'renovation',
+        'intéressé', 'interesse', 'j\'aimerais', 'jaimerais', 'je voudrais',
+        'combien', 'disponible', 'rendez-vous', 'rencontrer', 'visite',
+        'mesure', 'mesures', 'dimensions',
+        'construction', 'neuf', 'agrandissement', 'projet', 'chantier',
+    ];
+
+    const EXCLUDE_KEYWORDS = [
+        'facture', 'invoice', 'paiement', 'payment', 'reçu', 'receipt',
+        'newsletter', 'unsubscribe', 'désabonner', 'promotion', 'publicité',
+        'livraison', 'tracking', 'suivi colis', 'confirmation de commande',
+        'microsoft', 'office 365', 'teams', 'sharepoint',
+    ];
+
+    let detectedLeads = [];
+    let scanning = false;
+
+    // ===== CLIENT MATCHING =====
+    // Check if the email sender matches an existing client in the CRM
+    function findExistingClient(fromEmail, fromName, phone) {
+        const allDeals = Deals.getAll();
+        const matches = [];
+
+        const emailLower = (fromEmail || '').toLowerCase().trim();
+        const nameLower = (fromName || '').toLowerCase().trim();
+        const phoneClean = (phone || '').replace(/\D/g, '');
+
+        for (const deal of allDeals) {
+            let score = 0;
+            let reason = '';
+
+            // Exact email match = strongest signal
+            if (emailLower && deal.clientEmail && deal.clientEmail.toLowerCase().trim() === emailLower) {
+                score = 100;
+                reason = 'Courriel identique';
+            }
+
+            // Phone match (cleaned digits)
+            if (!score && phoneClean.length >= 10 && deal.clientPhone) {
+                const dealPhone = deal.clientPhone.replace(/\D/g, '');
+                if (dealPhone === phoneClean || dealPhone.endsWith(phoneClean.slice(-10))) {
+                    score = 90;
+                    reason = 'Téléphone identique';
+                }
+            }
+
+            // Name match (fuzzy - contains both first and last name parts)
+            if (!score && nameLower.length > 3 && deal.clientName) {
+                const dealName = deal.clientName.toLowerCase();
+                const nameParts = nameLower.split(/[\s,]+/).filter(p => p.length > 2);
+                const dealParts = dealName.split(/[\s,]+/).filter(p => p.length > 2);
+                const matchingParts = nameParts.filter(p => dealParts.some(dp => dp.includes(p) || p.includes(dp)));
+                if (matchingParts.length >= 2) {
+                    score = 80;
+                    reason = 'Nom similaire';
+                } else if (matchingParts.length === 1 && nameParts.length <= 2) {
+                    score = 50;
+                    reason = 'Nom partiel';
+                }
+            }
+
+            // Email domain match for businesses (same company)
+            if (!score && emailLower && deal.clientEmail) {
+                const fromDomain = emailLower.split('@')[1];
+                const dealDomain = deal.clientEmail.toLowerCase().split('@')[1];
+                if (fromDomain && dealDomain && fromDomain === dealDomain
+                    && !['gmail.com','outlook.com','hotmail.com','yahoo.com','videotron.ca','bell.net','sympatico.ca','icloud.com'].includes(fromDomain)) {
+                    score = 60;
+                    reason = 'Même entreprise';
+                }
+            }
+
+            if (score > 0) {
+                matches.push({ deal, score, reason });
+            }
+        }
+
+        // Sort by score descending, return best matches
+        return matches.sort((a, b) => b.score - a.score);
+    }
+
+    async function scanEmails() {
+        scanning = true;
+        detectedLeads = [];
+        updateUI('scanning');
+
+        try {
+            let emails;
+            if (Auth.isDemoMode()) {
+                emails = generateDemoEmails();
+            } else {
+                const weekAgo = new Date();
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                emails = await Graph.getEmails(50, `receivedDateTime ge ${weekAgo.toISOString()}`);
+            }
+
+            for (const email of emails) {
+                const score = analyzeEmail(email);
+                if (score.confidence > 0) {
+                    const fromEmail = email.from?.emailAddress?.address || email.fromEmail || '';
+                    const fromName = email.from?.emailAddress?.name || email.fromName || 'Inconnu';
+
+                    // Check if client already exists
+                    const existingMatches = findExistingClient(fromEmail, fromName, score.phone);
+                    const bestMatch = existingMatches.length > 0 ? existingMatches[0] : null;
+
+                    detectedLeads.push({
+                        id: email.id || 'E' + Math.random().toString(36).substr(2, 9),
+                        from: fromName,
+                        fromEmail: fromEmail,
+                        subject: email.subject || '',
+                        preview: (email.bodyPreview || email.preview || '').substring(0, 200),
+                        date: email.receivedDateTime || email.date || new Date().toISOString(),
+                        confidence: score.confidence,
+                        matchedKeywords: score.keywords,
+                        phone: score.phone,
+                        // Client matching
+                        existingDeal: bestMatch ? bestMatch.deal : null,
+                        matchReason: bestMatch ? bestMatch.reason : null,
+                        matchScore: bestMatch ? bestMatch.score : 0,
+                        allMatches: existingMatches,
+                    });
+                }
+            }
+
+            // Sort: existing clients first (they need attention), then by confidence
+            detectedLeads.sort((a, b) => {
+                // Existing clients with high match first
+                if (a.existingDeal && !b.existingDeal) return -1;
+                if (!a.existingDeal && b.existingDeal) return 1;
+                return b.confidence - a.confidence;
+            });
+
+        } catch (e) {
+            console.error('Email scan failed:', e);
+            App.showToast('Erreur lors du scan des courriels', 'error');
+        }
+
+        scanning = false;
+        updateUI('results');
+        updateBadge();
+    }
+
+    function analyzeEmail(email) {
+        const subject = (email.subject || '').toLowerCase();
+        const body = (email.bodyPreview || email.preview || '').toLowerCase();
+        const text = subject + ' ' + body;
+
+        for (const kw of EXCLUDE_KEYWORDS) {
+            if (text.includes(kw.toLowerCase())) {
+                return { confidence: 0, keywords: [], phone: null };
+            }
+        }
+
+        const matched = [];
+        for (const kw of LEAD_KEYWORDS) {
+            if (text.includes(kw.toLowerCase())) {
+                matched.push(kw);
+            }
+        }
+
+        const phoneRegex = /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
+        const phoneMatch = text.match(phoneRegex);
+
+        let confidence = 0;
+        if (matched.length >= 4) confidence = 3;
+        else if (matched.length >= 2) confidence = 2;
+        else if (matched.length >= 1) confidence = 1;
+
+        const subjectMatches = matched.filter(kw => subject.includes(kw.toLowerCase()));
+        if (subjectMatches.length >= 1) confidence = Math.min(3, confidence + 1);
+        if (phoneMatch) confidence = Math.min(3, confidence + 1);
+
+        return {
+            confidence,
+            keywords: matched,
+            phone: phoneMatch ? phoneMatch[0] : null,
+        };
+    }
+
+    function updateUI(state) {
+        const container = document.getElementById('email-leads-list');
+        if (!container) return;
+
+        if (state === 'scanning') {
+            container.innerHTML = `
+                <div class="email-placeholder">
+                    <p style="font-size:24px">🔍</p>
+                    <p>Analyse des courriels en cours...</p>
+                    <p style="font-size:12px;color:var(--text-muted)">Vérification des clients existants...</p>
+                </div>
+            `;
+            return;
+        }
+
+        if (detectedLeads.length === 0) {
+            container.innerHTML = `
+                <div class="email-placeholder">
+                    <p>Aucun lead potentiel détecté dans les courriels récents.</p>
+                    <p style="font-size:12px;margin-top:8px;color:var(--text-muted)">
+                        Les courriels des 7 derniers jours ont été analysés.
+                    </p>
+                </div>
+            `;
+            return;
+        }
+
+        // Count existing vs new
+        const existingCount = detectedLeads.filter(l => l.existingDeal).length;
+        const newCount = detectedLeads.length - existingCount;
+
+        let html = `
+            <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--bg);border-radius:var(--radius);font-size:13px">
+                <span><strong>${detectedLeads.length}</strong> courriels détectés</span>
+                ${existingCount > 0 ? `<span style="color:var(--info)">📋 <strong>${existingCount}</strong> clients existants</span>` : ''}
+                ${newCount > 0 ? `<span style="color:var(--success)">🆕 <strong>${newCount}</strong> nouveaux leads potentiels</span>` : ''}
+            </div>
+        `;
+
+        html += detectedLeads.map(lead => {
+            const confClass = lead.confidence >= 3 ? 'high' : lead.confidence >= 2 ? 'medium' : 'low';
+            const confText = lead.confidence >= 3 ? 'Élevée' : lead.confidence >= 2 ? 'Moyenne' : 'Faible';
+            const isExisting = lead.existingDeal !== null;
+
+            return `
+                <div class="email-lead-card" style="${isExisting ? 'border-left:4px solid var(--info)' : ''}">
+                    <span class="email-confidence ${confClass}">${confText}</span>
+                    <div class="email-content">
+                        ${isExisting ? `
+                            <div style="background:var(--info-light);color:var(--info);padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-bottom:6px;display:inline-block">
+                                📋 CLIENT EXISTANT: ${lead.existingDeal.clientName} (${lead.matchReason})
+                                — Étape: ${Deals.getStageName(lead.existingDeal.stage)}
+                            </div>
+                        ` : ''}
+                        <div class="email-from">${lead.from} &lt;${lead.fromEmail}&gt;</div>
+                        <div class="email-subject">${lead.subject}</div>
+                        <div class="email-preview">${lead.preview}...</div>
+                        <div class="email-date">${Deals.formatDate(lead.date)}
+                            ${lead.phone ? ` | Tél: ${lead.phone}` : ''}
+                            | Mots-clés: ${lead.matchedKeywords.slice(0, 5).join(', ')}
+                        </div>
+                    </div>
+                    <div class="email-actions" style="display:flex;flex-direction:column;gap:6px">
+                        ${isExisting ? `
+                            <button class="btn btn-sm btn-primary" onclick="EmailScanner.openExistingDeal('${lead.id}')">
+                                Ouvrir le deal
+                            </button>
+                            <button class="btn btn-sm btn-outline" onclick="EmailScanner.addNoteFromEmail('${lead.id}')">
+                                Ajouter note
+                            </button>
+                            ${lead.allMatches.length > 1 ? `
+                                <button class="btn btn-sm btn-outline" onclick="EmailScanner.showAllMatches('${lead.id}')">
+                                    ${lead.allMatches.length} deals liés
+                                </button>
+                            ` : ''}
+                        ` : `
+                            <button class="btn btn-sm btn-primary" onclick="EmailScanner.createDealFromEmail('${lead.id}')">
+                                Créer deal
+                            </button>
+                        `}
+                        <button class="btn btn-sm btn-outline" onclick="EmailScanner.dismiss('${lead.id}')">
+                            Ignorer
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = html;
+    }
+
+    function openExistingDeal(emailId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead || !lead.existingDeal) return;
+        App.openDeal(lead.existingDeal.id);
+    }
+
+    async function addNoteFromEmail(emailId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead || !lead.existingDeal) return;
+
+        const noteText = `📧 Courriel reçu de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`;
+        await Deals.addNote(lead.existingDeal.id, noteText);
+        App.showToast(`Note ajoutée au deal de ${lead.existingDeal.clientName}`, 'success');
+        dismiss(emailId);
+    }
+
+    function showAllMatches(emailId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead) return;
+
+        const matchList = lead.allMatches.map(m =>
+            `- ${m.deal.clientName} (${m.reason}, étape: ${Deals.getStageName(m.deal.stage)})`
+        ).join('\n');
+
+        alert(`Deals possiblement liés:\n\n${matchList}\n\nCliquez "Ouvrir le deal" pour voir le meilleur match.`);
+    }
+
+    async function createDealFromEmail(emailId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead) return;
+
+        const dealData = {
+            clientName: lead.from,
+            clientEmail: lead.fromEmail,
+            clientPhone: lead.phone || '',
+            clientType: 'regulier',
+            leadSource: 'courriel',
+            leadDate: new Date(lead.date).toISOString().split('T')[0],
+            description: `Lead détecté par courriel: "${lead.subject}"`,
+        };
+
+        App.openNewDeal(dealData);
+        dismiss(emailId);
+        App.showToast('Deal pré-rempli depuis le courriel', 'info');
+    }
+
+    function dismiss(emailId) {
+        detectedLeads = detectedLeads.filter(l => l.id !== emailId);
+        updateUI('results');
+        updateBadge();
+    }
+
+    function updateBadge() {
+        const badge = document.getElementById('badge-emails');
+        if (badge) {
+            if (detectedLeads.length > 0) {
+                badge.textContent = detectedLeads.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+    }
+
+    function generateDemoEmails() {
+        return [
+            {
+                // This one matches existing demo deal "Gagnon, Sophie" by name
+                id: 'E001', fromName: 'Sophie Gagnon', fromEmail: 'sophie.gagnon@gmail.com',
+                subject: 'Re: Soumission fenêtres - question sur le vitrage',
+                preview: 'Bonjour, je fais suite à notre discussion. J\'aimerais savoir si le vitrage triple est disponible pour les fenêtres de la soumission que vous m\'avez envoyée. Aussi, est-ce que le prix change beaucoup? Merci!',
+                date: new Date(Date.now() - 86400000).toISOString(),
+            },
+            {
+                id: 'E002', fromName: 'Robert Simard', fromEmail: 'robert.simard@gmail.com',
+                subject: 'Remplacement de fenêtres - demande de soumission',
+                preview: 'Bonjour, nous aimerions avoir une soumission pour le remplacement de 8 fenêtres dans notre maison. La maison date de 1985 et les fenêtres sont d\'origine. Pouvez-vous venir prendre les mesures? Mon téléphone est (418) 555-3421.',
+                date: new Date(Date.now() - 86400000).toISOString(),
+            },
+            {
+                // This matches "Construction ABC" by company name
+                id: 'E003', fromName: 'Jean Dupont', fromEmail: 'jean@constructionabc.com',
+                subject: 'Projet 12 unités - mise à jour des specs',
+                preview: 'Bonjour, suite à notre rencontre, nous avons modifié les plans. Les dimensions des fenêtres du 3e étage ont changé. Pouvez-vous réviser la soumission? Merci',
+                date: new Date(Date.now() - 172800000).toISOString(),
+            },
+            {
+                id: 'E004', fromName: 'Marie-Claude Fortier', fromEmail: 'mc.fortier@outlook.com',
+                subject: 'Prix pour porte d\'entrée et porte patio',
+                preview: 'Bonjour, je suis intéressée par une nouvelle porte d\'entrée et une porte patio pour ma maison à Québec. Combien ça coûte environ? Merci',
+                date: new Date(Date.now() - 172800000).toISOString(),
+            },
+            {
+                // Matches "Tremblay, Martin" by last name
+                id: 'E005', fromName: 'Martin Tremblay', fromEmail: 'martin.tremblay@videotron.ca',
+                subject: 'Re: Installation - question date',
+                preview: 'Bonjour, je voulais savoir quand est prévue l\'installation de mes fenêtres? J\'ai hâte! Pouvez-vous me confirmer la date? Mon numéro est (418) 555-7890',
+                date: new Date(Date.now() - 259200000).toISOString(),
+            },
+            {
+                id: 'E006', fromName: 'Microsoft 365', fromEmail: 'noreply@microsoft.com',
+                subject: 'Votre abonnement Microsoft 365 a été renouvelé',
+                preview: 'Votre abonnement Microsoft 365 Business a été renouvelé automatiquement. Montant: 22.00$/mois.',
+                date: new Date(Date.now() - 86400000).toISOString(),
+            },
+            {
+                id: 'E007', fromName: 'Fournisseur ABC', fromEmail: 'factures@fournisseurabc.com',
+                subject: 'Facture #12345 - Livraison de matériaux',
+                preview: 'Veuillez trouver ci-joint la facture pour la livraison de matériaux du 20 mars. Paiement net 30 jours.',
+                date: new Date(Date.now() - 172800000).toISOString(),
+            },
+        ];
+    }
+
+    return {
+        scanEmails,
+        createDealFromEmail,
+        openExistingDeal,
+        addNoteFromEmail,
+        showAllMatches,
+        dismiss,
+        getDetectedLeads: () => detectedLeads,
+    };
+})();

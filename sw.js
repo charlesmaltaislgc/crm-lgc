@@ -1,0 +1,54 @@
+// ===== CRM LGC - Service Worker =====
+// Enables PWA install + offline caching
+
+const CACHE_NAME = 'crm-lgc-v1';
+const ASSETS = [
+    './',
+    './index.html',
+    './css/styles.css',
+    './js/app.js',
+    './js/auth.js',
+    './js/graph.js',
+    './js/deals.js',
+    './js/pipeline.js',
+    './js/alerts.js',
+    './js/email-scanner.js',
+    './js/contracts.js',
+    './js/payments.js',
+    './js/shopify.js',
+    './js/team.js',
+    './js/reports.js',
+    './js/plan-reader.js',
+    './js/notifications.js',
+    './js/calendar.js',
+    './manifest.json',
+];
+
+self.addEventListener('install', (event) => {
+    event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+    );
+    self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then(keys =>
+            Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+        )
+    );
+    self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+    // Network first, fallback to cache
+    event.respondWith(
+        fetch(event.request)
+            .then(response => {
+                const clone = response.clone();
+                caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+                return response;
+            })
+            .catch(() => caches.match(event.request))
+    );
+});

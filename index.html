@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM LGC - Portes et Fenêtres</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a56db">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- MSAL.js for M365 auth -->
+    <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-card">
+            <div class="login-logo">
+                <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                    <rect width="64" height="64" rx="12" fill="#1a56db"/>
+                    <text x="32" y="42" text-anchor="middle" fill="white" font-size="28" font-weight="bold">LGC</text>
+                </svg>
+                <h1>CRM LGC</h1>
+                <p>Portes et Fenêtres</p>
+            </div>
+            <button id="btn-login" class="btn btn-primary btn-lg">
+                <svg width="20" height="20" viewBox="0 0 21 21" fill="currentColor"><path d="M0 0h10v10H0zM11 0h10v10H11zM0 11h10v10H0zM11 11h10v10H11z"/></svg>
+                Se connecter avec Microsoft 365
+            </button>
+            <p class="login-hint">Utilisez votre compte M365 LGC</p>
+            <!-- Demo mode for testing without M365 -->
+            <button id="btn-demo" class="btn btn-outline btn-sm">Mode démo (sans M365)</button>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="app hidden">
+        <!-- Sidebar -->
+        <nav id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <svg width="36" height="36" viewBox="0 0 64 64" fill="none">
+                        <rect width="64" height="64" rx="12" fill="#1a56db"/>
+                        <text x="32" y="42" text-anchor="middle" fill="white" font-size="28" font-weight="bold">LGC</text>
+                    </svg>
+                    <span>CRM LGC</span>
+                </div>
+                <button id="sidebar-toggle" class="sidebar-toggle" title="Réduire le menu">☰</button>
+            </div>
+
+            <div class="sidebar-user" id="sidebar-user">
+                <div class="avatar" id="user-avatar">?</div>
+                <div class="user-info">
+                    <span class="user-name" id="user-name">Chargement...</span>
+                    <span class="user-role" id="user-role">Vendeur</span>
+                </div>
+            </div>
+
+            <ul class="sidebar-nav">
+                <li><a href="#" data-view="dashboard" class="nav-link active">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Tableau de bord</span>
+                    <span class="badge badge-danger hidden" id="badge-alerts">0</span>
+                </a></li>
+                <li><a href="#" data-view="pipeline" class="nav-link">
+                    <span class="nav-icon">🔄</span>
+                    <span class="nav-text">Pipeline</span>
+                </a></li>
+                <li><a href="#" data-view="deals" class="nav-link">
+                    <span class="nav-icon">📋</span>
+                    <span class="nav-text">Tous les deals</span>
+                </a></li>
+                <li><a href="#" data-view="emails" class="nav-link">
+                    <span class="nav-icon">📧</span>
+                    <span class="nav-text">Courriels / Leads</span>
+                    <span class="badge badge-info hidden" id="badge-emails">0</span>
+                </a></li>
+                <li><a href="#" data-view="contracts" class="nav-link">
+                    <span class="nav-icon">✍️</span>
+                    <span class="nav-text">Contrats</span>
+                </a></li>
+                <li><a href="#" data-view="payments" class="nav-link">
+                    <span class="nav-icon">💰</span>
+                    <span class="nav-text">Paiements</span>
+                    <span class="badge badge-warning hidden" id="badge-payments">0</span>
+                </a></li>
+                <li><a href="#" data-view="plans" class="nav-link">
+                    <span class="nav-icon">📐</span>
+                    <span class="nav-text">Lecteur de plans IA</span>
+                </a></li>
+                <li class="nav-divider"></li>
+                <li><a href="#" data-view="team" class="nav-link director-only">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">Équipe</span>
+                </a></li>
+                <li><a href="#" data-view="reports" class="nav-link">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-text">Rapports</span>
+                </a></li>
+                <li><a href="#" data-view="settings" class="nav-link">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-text">Paramètres</span>
+                </a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main id="main-content" class="main-content">
+            <!-- Top Bar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <h2 id="page-title">Tableau de bord</h2>
+                </div>
+                <div class="topbar-right">
+                    <div class="search-box">
+                        <input type="text" id="global-search" placeholder="Rechercher client, téléphone, deal..." autocomplete="off">
+                        <span class="search-icon">🔍</span>
+                    </div>
+                    <button id="btn-new-deal" class="btn btn-primary">+ Nouveau deal</button>
+                    <button id="btn-notifications" class="btn btn-icon" title="Notifications">
+                        🔔
+                        <span class="notif-dot hidden" id="notif-dot"></span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Views Container -->
+            <div id="views-container" class="views-container">
+
+                <!-- DASHBOARD VIEW -->
+                <section id="view-dashboard" class="view active">
+                    <!-- Alerts / À faire aujourd'hui -->
+                    <div id="alerts-section" class="alerts-section">
+                        <h3 class="section-title">🔴 À faire aujourd'hui</h3>
+                        <div id="alerts-list" class="alerts-grid">
+                            <!-- Populated by alerts.js -->
+                            <div class="alert-placeholder">Aucune alerte - tout est sous contrôle!</div>
+                        </div>
+                    </div>
+
+                    <!-- KPI Cards -->
+                    <div class="kpi-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-value" id="kpi-active-deals">0</div>
+                            <div class="kpi-label">Deals actifs</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-value" id="kpi-pipeline-value">0 $</div>
+                            <div class="kpi-label">Valeur pipeline</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-value" id="kpi-conversion">0%</div>
+                            <div class="kpi-label">Taux conversion</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-value" id="kpi-avg-delay">0j</div>
+                            <div class="kpi-label">Délai lead→soumission</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-value" id="kpi-overdue">0</div>
+                            <div class="kpi-label">Deals en retard</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-value" id="kpi-monthly-revenue">0 $</div>
+                            <div class="kpi-label">Revenus ce mois</div>
+                        </div>
+                    </div>
+
+                    <!-- Mini Pipeline Overview -->
+                    <div class="pipeline-overview">
+                        <h3 class="section-title">Pipeline en un coup d'oeil</h3>
+                        <div id="pipeline-mini" class="pipeline-mini-grid">
+                            <!-- Populated by pipeline.js -->
+                        </div>
+                    </div>
+
+                    <!-- Upcoming Calendar Events -->
+                    <div class="upcoming-section" style="margin-bottom:24px">
+                        <h3 class="section-title">📅 Rendez-vous cette semaine</h3>
+                        <div id="upcoming-events" class="team-tasks-list">
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity -->
+                    <div class="recent-activity">
+                        <h3 class="section-title">Activité récente</h3>
+                        <div id="activity-feed" class="activity-feed">
+                            <div class="activity-placeholder">Aucune activité récente</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- PIPELINE VIEW (Kanban) -->
+                <section id="view-pipeline" class="view">
+                    <div class="pipeline-controls">
+                        <div class="pipeline-filters">
+                            <select id="filter-vendeur" class="input-sm">
+                                <option value="">Tous les vendeurs</option>
+                            </select>
+                            <select id="filter-type-client" class="input-sm">
+                                <option value="">Tous les clients</option>
+                                <option value="regulier">Régulier</option>
+                                <option value="entrepreneur">Entrepreneur</option>
+                            </select>
+                        </div>
+                        <div class="pipeline-view-toggle">
+                            <button class="btn btn-sm active" data-pipeline-view="kanban">Kanban</button>
+                            <button class="btn btn-sm" data-pipeline-view="list">Liste</button>
+                        </div>
+                    </div>
+                    <div id="kanban-board" class="kanban-board">
+                        <!-- Populated by pipeline.js - 14 columns -->
+                    </div>
+                    <div id="list-view" class="list-view hidden">
+                        <!-- Populated by pipeline.js -->
+                    </div>
+                </section>
+
+                <!-- DEALS LIST VIEW -->
+                <section id="view-deals" class="view">
+                    <div class="deals-toolbar">
+                        <div class="deals-filters">
+                            <input type="text" id="deals-search" placeholder="Rechercher..." class="input-sm">
+                            <select id="deals-filter-stage" class="input-sm">
+                                <option value="">Toutes les étapes</option>
+                            </select>
+                            <select id="deals-filter-vendeur" class="input-sm">
+                                <option value="">Tous les vendeurs</option>
+                            </select>
+                            <select id="deals-filter-status" class="input-sm">
+                                <option value="">Tous les statuts</option>
+                                <option value="active">Actifs</option>
+                                <option value="won">Gagnés</option>
+                                <option value="lost">Perdus</option>
+                            </select>
+                        </div>
+                        <div class="deals-actions">
+                            <button class="btn btn-sm btn-outline" id="btn-export-deals">Exporter</button>
+                        </div>
+                    </div>
+                    <table class="deals-table" id="deals-table">
+                        <thead>
+                            <tr>
+                                <th data-sort="client">Client ↕</th>
+                                <th data-sort="stage">Étape ↕</th>
+                                <th data-sort="amount">Montant ↕</th>
+                                <th data-sort="vendeur">Vendeur ↕</th>
+                                <th data-sort="leadDate">Date lead ↕</th>
+                                <th data-sort="delay">Délai ↕</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deals-tbody">
+                        </tbody>
+                    </table>
+                </section>
+
+                <!-- EMAILS / LEADS DETECTION VIEW -->
+                <section id="view-emails" class="view">
+                    <div class="emails-header">
+                        <h3>Détection de leads dans les courriels</h3>
+                        <button id="btn-scan-emails" class="btn btn-primary">🔍 Scanner les courriels</button>
+                    </div>
+                    <div id="email-leads-list" class="email-leads-list">
+                        <div class="email-placeholder">
+                            <p>Cliquez sur "Scanner les courriels" pour analyser votre boîte Outlook et détecter des leads potentiels.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- CONTRACTS VIEW -->
+                <section id="view-contracts" class="view">
+                    <div class="contracts-header">
+                        <h3>Contrats et signatures électroniques</h3>
+                    </div>
+                    <div class="contracts-tabs">
+                        <button class="tab-btn active" data-tab="pending">En attente de signature</button>
+                        <button class="tab-btn" data-tab="signed">Signés</button>
+                        <button class="tab-btn" data-tab="all">Tous</button>
+                    </div>
+                    <div id="contracts-list" class="contracts-list">
+                    </div>
+                </section>
+
+                <!-- PAYMENTS VIEW -->
+                <section id="view-payments" class="view">
+                    <div class="payments-header">
+                        <h3>Suivi des paiements et acomptes</h3>
+                        <div class="payments-summary">
+                            <div class="payment-stat">
+                                <span class="payment-stat-value" id="pay-total-due">0 $</span>
+                                <span class="payment-stat-label">Total à recevoir</span>
+                            </div>
+                            <div class="payment-stat">
+                                <span class="payment-stat-value" id="pay-overdue">0 $</span>
+                                <span class="payment-stat-label">En retard</span>
+                            </div>
+                            <div class="payment-stat">
+                                <span class="payment-stat-value" id="pay-shopify">0 $</span>
+                                <span class="payment-stat-label">Reçu Shopify (ce mois)</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="payments-tabs">
+                        <button class="tab-btn active" data-tab="acomptes">Acomptes requis</button>
+                        <button class="tab-btn" data-tab="overdue">En retard</button>
+                        <button class="tab-btn" data-tab="shopify">Shopify</button>
+                        <button class="tab-btn" data-tab="all-payments">Tous</button>
+                    </div>
+                    <div id="payments-list" class="payments-list">
+                    </div>
+                </section>
+
+                <!-- TEAM VIEW (Director only) -->
+                <section id="view-team" class="view">
+                    <div class="team-header">
+                        <h3>Gestion de l'équipe</h3>
+                        <button id="btn-assign-task" class="btn btn-primary">+ Assigner une tâche</button>
+                    </div>
+                    <div class="team-grid" id="team-grid">
+                        <!-- Populated by team.js - cards per team member -->
+                    </div>
+                    <div class="team-tasks">
+                        <h3 class="section-title">Tâches de l'équipe</h3>
+                        <div id="team-tasks-list" class="team-tasks-list">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- REPORTS VIEW -->
+                <section id="view-reports" class="view">
+                    <div class="reports-header">
+                        <h3>Rapports</h3>
+                        <div class="reports-period">
+                            <select id="report-period" class="input-sm">
+                                <option value="month">Ce mois</option>
+                                <option value="quarter">Ce trimestre</option>
+                                <option value="year">Cette année</option>
+                                <option value="all">Tout</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="reports-grid" id="reports-grid">
+                        <!-- Populated by reports.js -->
+                    </div>
+                </section>
+
+                <!-- PLAN READER VIEW -->
+                <section id="view-plans" class="view">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                        <div>
+                            <h3>Lecteur de plans IA</h3>
+                            <p style="color:var(--text-secondary);font-size:13px;margin-top:4px">
+                                Uploadez un plan architectural - l'IA extrait portes, fenêtres, dimensions, quantités et localisations en secondes.
+                            </p>
+                        </div>
+                        <div style="background:var(--primary-light);color:var(--primary);padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700">
+                            IA 2026
+                        </div>
+                    </div>
+                    <div id="plan-reader-content">
+                        <!-- Populated by plan-reader.js -->
+                    </div>
+                </section>
+
+                <!-- SETTINGS VIEW -->
+                <section id="view-settings" class="view">
+                    <div class="settings-sections">
+                        <div class="settings-section">
+                            <h3>Configuration générale</h3>
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label>Délai alerte relance soumission (jours)</label>
+                                    <input type="number" id="setting-relance-delay" value="5" class="input-sm">
+                                </div>
+                                <div class="form-group">
+                                    <label>Délai alerte lead→soumission (jours)</label>
+                                    <input type="number" id="setting-lead-delay" value="14" class="input-sm">
+                                </div>
+                                <div class="form-group">
+                                    <label>Net 30 - jours avant alerte entrepreneur</label>
+                                    <input type="number" id="setting-net30-delay" value="30" class="input-sm">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>Connexion Shopify</h3>
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label>Store URL (ex: lgc-portes.myshopify.com)</label>
+                                    <input type="text" id="setting-shopify-store" class="input-sm" placeholder="votre-store.myshopify.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>Admin API Access Token</label>
+                                    <input type="password" id="setting-shopify-token" class="input-sm" placeholder="shpat_xxxxx">
+                                </div>
+                                <button id="btn-test-shopify" class="btn btn-sm btn-outline">Tester la connexion</button>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>Vendeurs / Équipe</h3>
+                            <div id="team-settings" class="team-settings">
+                                <!-- Managed by team.js -->
+                            </div>
+                            <button id="btn-add-member" class="btn btn-sm btn-outline">+ Ajouter un membre</button>
+                        </div>
+                        <div class="settings-section">
+                            <h3>Intelligence artificielle (Lecteur de plans)</h3>
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label>Fournisseur IA</label>
+                                    <select id="setting-ai-provider" class="input-sm">
+                                        <option value="anthropic">Anthropic (Claude) - Recommandé</option>
+                                        <option value="openai">OpenAI (GPT-4o)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Clé API</label>
+                                    <input type="password" id="setting-ai-apikey" class="input-sm" placeholder="sk-ant-... ou sk-...">
+                                </div>
+                                <div class="form-group">
+                                    <label>Modèle</label>
+                                    <input type="text" id="setting-ai-model" class="input-sm" value="claude-sonnet-4-20250514" placeholder="claude-sonnet-4-20250514">
+                                </div>
+                                <button id="btn-save-ai" class="btn btn-sm btn-primary">Sauvegarder</button>
+                                <p style="font-size:11px;color:var(--text-muted);margin-top:8px">
+                                    La clé API est stockée localement dans votre navigateur. Elle n'est jamais envoyée à nos serveurs.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>Apparence</h3>
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label>Thème</label>
+                                    <select id="setting-theme" class="input-sm">
+                                        <option value="light">Clair</option>
+                                        <option value="dark">Sombre</option>
+                                        <option value="auto">Automatique (système)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>Azure AD / M365</h3>
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label>Client ID (Application ID)</label>
+                                    <input type="text" id="setting-client-id" class="input-sm" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                                </div>
+                                <div class="form-group">
+                                    <label>Tenant ID</label>
+                                    <input type="text" id="setting-tenant-id" class="input-sm" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                                </div>
+                                <div class="form-group">
+                                    <label>SharePoint Site URL</label>
+                                    <input type="text" id="setting-sp-site" class="input-sm" placeholder="https://porteslgc.sharepoint.com/sites/CRM">
+                                </div>
+                                <button id="btn-save-azure" class="btn btn-sm btn-primary">Sauvegarder</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL: Deal Form -->
+    <div id="modal-deal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3 id="modal-deal-title">Nouveau deal</h3>
+                <button class="modal-close" data-modal="modal-deal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="deal-form">
+                    <div class="form-tabs">
+                        <button type="button" class="form-tab active" data-form-tab="client">Client</button>
+                        <button type="button" class="form-tab" data-form-tab="projet">Projet</button>
+                        <button type="button" class="form-tab" data-form-tab="references">Références</button>
+                        <button type="button" class="form-tab" data-form-tab="dates">Dates</button>
+                        <button type="button" class="form-tab" data-form-tab="fichiers">Fichiers</button>
+                        <button type="button" class="form-tab" data-form-tab="notes">Notes</button>
+                    </div>
+
+                    <!-- Tab: Client -->
+                    <div class="form-tab-content active" data-form-tab-content="client">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Nom complet *</label>
+                                <input type="text" name="clientName" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Téléphone *</label>
+                                <input type="tel" name="clientPhone" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Courriel</label>
+                                <input type="email" name="clientEmail">
+                            </div>
+                            <div class="form-group">
+                                <label>Adresse</label>
+                                <input type="text" name="clientAddress">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label># Compte Avantage *</label>
+                                <input type="text" name="accountNumber" required placeholder="Numéro client Acceo Avantage">
+                            </div>
+                            <div class="form-group">
+                                <label>Type de client *</label>
+                                <select name="clientType" required>
+                                    <option value="regulier">Régulier</option>
+                                    <option value="entrepreneur">Entrepreneur</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Source du lead</label>
+                                <select name="leadSource">
+                                    <option value="telephone">Téléphone</option>
+                                    <option value="courriel">Courriel</option>
+                                    <option value="en-personne">En personne</option>
+                                    <option value="reference">Référence</option>
+                                    <option value="web">Web</option>
+                                    <option value="shopify">Shopify</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Projet -->
+                    <div class="form-tab-content" data-form-tab-content="projet">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Type de projet</label>
+                                <select name="projectType">
+                                    <option value="renovation">Rénovation</option>
+                                    <option value="neuf">Construction neuve</option>
+                                    <option value="commercial">Commercial</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Produits</label>
+                                <select name="products">
+                                    <option value="fenetres">Fenêtres</option>
+                                    <option value="portes">Portes</option>
+                                    <option value="les-deux">Portes et fenêtres</option>
+                                    <option value="autre">Autre</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Description des travaux</label>
+                            <textarea name="description" rows="3"></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Montant soumission ($)</label>
+                                <input type="number" name="quoteAmount" step="0.01" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label>Montant contrat final ($)</label>
+                                <input type="number" name="contractAmount" step="0.01" min="0">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Étape actuelle</label>
+                                <select name="stage" id="deal-stage-select">
+                                    <!-- Populated by JS -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Vendeur assigné</label>
+                                <select name="assignedTo" id="deal-vendor-select">
+                                    <option value="">Non assigné</option>
+                                    <!-- Populated by JS -->
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Références -->
+                    <div class="form-tab-content" data-form-tab-content="references">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label># Soumission Mec-inov</label>
+                                <input type="text" name="mecinovQuoteNum">
+                            </div>
+                            <div class="form-group">
+                                <label># Commande Mec-inov</label>
+                                <input type="text" name="mecinovOrderNum">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label># Facture Mec-inov</label>
+                                <input type="text" name="mecinovInvoiceNum">
+                            </div>
+                            <div class="form-group">
+                                <label># Facture Avantage</label>
+                                <input type="text" name="avantageInvoiceNum">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label># Commande Shopify</label>
+                                <input type="text" name="shopifyOrderNum">
+                            </div>
+                            <div class="form-group">
+                                <label>Acompte requis ($)</label>
+                                <input type="number" name="depositRequired" step="0.01" min="0">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Acompte reçu</label>
+                                <select name="depositReceived">
+                                    <option value="non">Non</option>
+                                    <option value="oui">Oui</option>
+                                    <option value="na">N/A (entrepreneur)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Statut paiement</label>
+                                <select name="paymentStatus">
+                                    <option value="pending">En attente</option>
+                                    <option value="partial">Partiel</option>
+                                    <option value="paid">Payé</option>
+                                    <option value="overdue">En retard</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Dates -->
+                    <div class="form-tab-content" data-form-tab-content="dates">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Date du lead *</label>
+                                <input type="date" name="leadDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Date assignation vendeur</label>
+                                <input type="date" name="assignDate">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Date soumission envoyée</label>
+                                <input type="date" name="quoteSentDate">
+                            </div>
+                            <div class="form-group">
+                                <label>Date dernière relance</label>
+                                <input type="date" name="lastFollowUp">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Date signature contrat</label>
+                                <input type="date" name="contractSignDate">
+                            </div>
+                            <div class="form-group">
+                                <label>Date acompte reçu</label>
+                                <input type="date" name="depositDate">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Date commande fournisseur</label>
+                                <input type="date" name="supplierOrderDate">
+                            </div>
+                            <div class="form-group">
+                                <label>Date mesures installation</label>
+                                <input type="date" name="measurementDate">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Date installation prévue</label>
+                                <input type="date" name="installDate">
+                            </div>
+                            <div class="form-group">
+                                <label>Date complétée</label>
+                                <input type="date" name="completedDate">
+                            </div>
+                        </div>
+                        <div class="delay-indicator" id="delay-indicator">
+                            <strong>Délai lead → soumission:</strong> <span id="delay-value">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Pièces jointes -->
+                    <div class="form-tab-content" data-form-tab-content="fichiers">
+                        <div class="attachments-section">
+                            <div class="attachments-upload">
+                                <label class="upload-zone" id="upload-zone">
+                                    <input type="file" id="file-upload" multiple style="display:none"
+                                           accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.msg">
+                                    <div class="upload-icon">📎</div>
+                                    <div class="upload-text">Glissez des fichiers ici ou <strong>cliquez pour choisir</strong></div>
+                                    <div class="upload-hint">PDF, Word, Excel, images, courriels (.msg) - max 25 Mo</div>
+                                </label>
+                            </div>
+                            <div id="attachments-list" class="attachments-list">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Notes -->
+                    <div class="form-tab-content" data-form-tab-content="notes">
+                        <div class="notes-timeline" id="deal-notes-timeline">
+                            <!-- Populated by deals.js -->
+                        </div>
+                        <div class="form-group">
+                            <label>Ajouter une note</label>
+                            <textarea name="newNote" rows="3" placeholder="Tapez votre note ici..."></textarea>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-footer-left">
+                    <span class="deal-status-indicator" id="deal-status-indicator"></span>
+                </div>
+                <div class="modal-footer-right">
+                    <button type="button" class="btn btn-outline" data-modal="modal-deal">Annuler</button>
+                    <button type="button" class="btn btn-outline" id="btn-deal-rdv" onclick="Calendar.showBookingModal(App._editingDealId)">📅 RDV</button>
+                    <button type="button" class="btn btn-outline" id="btn-deal-contract" onclick="Contracts.createContract(App._editingDealId)">✍️ Contrat</button>
+                    <button type="button" class="btn btn-danger hidden" id="btn-deal-lost">Marquer perdu</button>
+                    <button type="button" class="btn btn-primary" id="btn-save-deal">Sauvegarder</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Task Assignment -->
+    <div id="modal-task" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h3>Assigner une tâche</h3>
+                <button class="modal-close" data-modal="modal-task">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="task-form">
+                    <div class="form-group">
+                        <label>Description *</label>
+                        <input type="text" name="taskDescription" required placeholder="Ex: Prendre les mesures chez M. Tremblay">
+                    </div>
+                    <div class="form-group">
+                        <label>Assigné à *</label>
+                        <select name="taskAssignee" id="task-assignee-select" required>
+                            <option value="">Sélectionner...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Deal lié</label>
+                        <select name="taskDealId" id="task-deal-select">
+                            <option value="">Aucun</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Date limite *</label>
+                        <input type="date" name="taskDeadline" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Priorité</label>
+                        <select name="taskPriority">
+                            <option value="normal">Normale</option>
+                            <option value="high">Haute</option>
+                            <option value="urgent">Urgente</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal="modal-task">Annuler</button>
+                <button type="button" class="btn btn-primary" id="btn-save-task">Assigner</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Confirm -->
+    <div id="modal-confirm" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h3 id="confirm-title">Confirmer</h3>
+                <button class="modal-close" data-modal="modal-confirm">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal="modal-confirm">Annuler</button>
+                <button type="button" class="btn btn-danger" id="btn-confirm-action">Confirmer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="js/graph.js"></script>
+    <script src="js/deals.js"></script>
+    <script src="js/pipeline.js"></script>
+    <script src="js/alerts.js"></script>
+    <script src="js/email-scanner.js"></script>
+    <script src="js/contracts.js"></script>
+    <script src="js/payments.js"></script>
+    <script src="js/shopify.js"></script>
+    <script src="js/team.js"></script>
+    <script src="js/reports.js"></script>
+    <script src="js/plan-reader.js"></script>
+    <script src="js/notifications.js"></script>
+    <script src="js/calendar.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
