@@ -6,6 +6,7 @@ const App = (() => {
     let activities = [];
     let currentView = 'dashboard';
     let editingDealId = null;
+    let pendingFiles = []; // fichiers en attente pour les nouveaux deals
 
     // ===== INITIALIZATION =====
     async function init() {
@@ -262,6 +263,7 @@ const App = (() => {
 
     function openNewDeal(prefill = {}) {
         editingDealId = null;
+        pendingFiles = []; // réinitialiser les fichiers en attente
         const modal = document.getElementById('modal-deal');
         document.getElementById('modal-deal-title').textContent = 'Nouveau deal';
 
@@ -290,6 +292,7 @@ const App = (() => {
     function closeDealModal() {
         document.getElementById('modal-deal').classList.add('hidden');
         editingDealId = null;
+        pendingFiles = [];
     }
 
     async function saveDeal() {
@@ -322,8 +325,11 @@ const App = (() => {
                 return;
             }
             const newDeal = await Deals.create(data);
-            if (noteText && newDeal) {
-                await Deals.addNote(newDeal.id, noteText);
+            if (newDeal) {
+                if (noteText) await Deals.addNote(newDeal.id, noteText);
+                // Attacher les fichiers en attente
+                pendingFiles.forEach(f => saveAttachment(newDeal.id, f));
+                pendingFiles = [];
             }
             showToast('Nouveau deal créé!', 'success');
         }
@@ -611,12 +617,43 @@ const App = (() => {
                     uploadedBy: Auth.getUser()?.name || 'Inconnu',
                 };
 
-                saveAttachment(dealId, fileInfo);
-                renderAttachments(dealId);
+                if (dealId) {
+                    // Deal existant — sauvegarder directement
+                    saveAttachment(dealId, fileInfo);
+                    renderAttachments(dealId);
+                } else {
+                    // Nouveau deal — stocker en mémoire temporaire
+                    pendingFiles.push(fileInfo);
+                    renderPendingAttachments();
+                }
                 showToast(`${file.name} ajouté`, 'success');
             };
             reader.readAsDataURL(file);
         }
+    }
+
+    function renderPendingAttachments() {
+        const container = document.getElementById('attachments-list');
+        if (!container) return;
+        if (pendingFiles.length === 0) {
+            container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:13px">Aucune pièce jointe</div>';
+            return;
+        }
+        container.innerHTML = pendingFiles.map((att, idx) => {
+            const fi = getFileIcon(att.name);
+            return `
+                <div class="attachment-item">
+                    <div class="attachment-icon ${fi.cls}">${fi.icon}</div>
+                    <div class="attachment-info">
+                        <div class="attachment-name" title="${att.name}">${att.name}</div>
+                        <div class="attachment-meta">${formatFileSize(att.size)} — sera attaché à la sauvegarde</div>
+                    </div>
+                    <div class="attachment-actions">
+                        <button class="btn-icon-sm" title="Retirer" onclick="App.removePendingFile(${idx})">🗑️</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 
     function downloadAttachment(dealId, attachmentId) {
@@ -857,7 +894,7 @@ const App = (() => {
 
         if (fileInput) {
             fileInput.addEventListener('change', (e) => {
-                if (editingDealId && e.target.files.length > 0) {
+                if (e.target.files.length > 0) {
                     handleFileUpload(editingDealId, e.target.files);
                     e.target.value = ''; // reset
                 }
@@ -875,7 +912,7 @@ const App = (() => {
             uploadZone.addEventListener('drop', (e) => {
                 e.preventDefault();
                 uploadZone.classList.remove('drag-over');
-                if (editingDealId && e.dataTransfer.files.length > 0) {
+                if (e.dataTransfer.files.length > 0) {
                     handleFileUpload(editingDealId, e.dataTransfer.files);
                 }
             });
@@ -899,6 +936,11 @@ const App = (() => {
         });
     }
 
+    function removePendingFile(idx) {
+        pendingFiles.splice(idx, 1);
+        renderPendingAttachments();
+    }
+
     return {
         init,
         navigate,
@@ -909,6 +951,7 @@ const App = (() => {
         handleSearch,
         downloadAttachment,
         deleteAttachment,
+        removePendingFile,
         get _editingDealId() { return editingDealId; },
     };
 })();
