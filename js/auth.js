@@ -6,10 +6,10 @@ const Auth = (() => {
     let currentUser = null;
     let isDemo = false;
 
-    // MSAL config - user must set clientId and tenantId in settings
+    // MSAL config - Portes et Fenêtres LGC Azure AD App
     const getConfig = () => {
-        const clientId = localStorage.getItem('crm_clientId') || '';
-        const tenantId = localStorage.getItem('crm_tenantId') || '';
+        const clientId = localStorage.getItem('crm_clientId') || '1f609af8-79c7-410d-8540-050efc9e08cc';
+        const tenantId = localStorage.getItem('crm_tenantId') || '287a70f9-e3d2-4102-bb0e-3296726fcb3a';
         return {
             auth: {
                 clientId: clientId,
@@ -26,7 +26,7 @@ const Auth = (() => {
     const scopes = [
         'User.Read',
         'Sites.ReadWrite.All',
-        'Mail.Read',
+        'Mail.ReadWrite',
         'Mail.Send',
         'Calendars.ReadWrite'
     ];
