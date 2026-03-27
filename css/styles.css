@@ -143,6 +143,18 @@ a:hover { text-decoration: underline; }
     white-space: nowrap;
 }
 
+.sidebar-logo-img {
+    max-width: 140px;
+    max-height: 40px;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+    transition: max-width 0.2s;
+}
+
+.sidebar.collapsed .sidebar-logo-img {
+    max-width: 32px;
+}
+
 .sidebar-toggle {
     background: none;
     border: none;
