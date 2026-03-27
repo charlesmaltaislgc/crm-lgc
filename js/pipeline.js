@@ -249,7 +249,7 @@ const Pipeline = (() => {
             }
             team.forEach(member => {
                 if (['vendeur', 'directeur', 'directeur_usine'].includes(member.role)) {
-                    if (member.id === user?.id && !Auth.isDirector()) continue; // already added above
+                    if (member.id === user?.id && !Auth.isDirector()) return; // skip - already added above
                     select.innerHTML += `<option value="${member.id}">${member.name}</option>`;
                 }
             });
