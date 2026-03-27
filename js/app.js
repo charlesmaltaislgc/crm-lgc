@@ -275,9 +275,18 @@ const App = (() => {
         form.reset();
 
         // Set defaults
-        form.querySelector('[name="leadDate"]').value = new Date().toISOString().split('T')[0];
+        const today = new Date();
+        form.querySelector('[name="leadDate"]').value = today.toISOString().split('T')[0];
         form.querySelector('[name="stage"]').value = '1';
         form.querySelector('[name="clientType"]').value = 'regulier';
+
+        // Règle LGC: soumission max 48h après création du lead
+        const deadline48h = new Date(today);
+        deadline48h.setDate(deadline48h.getDate() + 2);
+        // Si le deadline tombe un samedi → lundi, dimanche → lundi
+        if (deadline48h.getDay() === 6) deadline48h.setDate(deadline48h.getDate() + 2);
+        if (deadline48h.getDay() === 0) deadline48h.setDate(deadline48h.getDate() + 1);
+        form.querySelector('[name="quoteDueDate"]').value = deadline48h.toISOString().split('T')[0];
 
         // Apply prefill
         Object.entries(prefill).forEach(([key, value]) => {
@@ -288,6 +297,10 @@ const App = (() => {
         document.getElementById('btn-deal-lost').classList.add('hidden');
         document.getElementById('deal-status-indicator').innerHTML = '<span style="color:var(--info)">Nouveau deal</span>';
         document.getElementById('deal-notes-timeline').innerHTML = '';
+        document.getElementById('attachments-list').innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:13px">Aucune pièce jointe</div>';
+
+        // Déclencher l'alerte 48h dès l'ouverture
+        updateQuoteDeadlineAlert();
 
         showFormTab('client');
         modal.classList.remove('hidden');
@@ -766,6 +779,22 @@ const App = (() => {
         // Quote deadline alert - live update when dates change
         document.getElementById('quote-due-date')?.addEventListener('change', updateQuoteDeadlineAlert);
         document.getElementById('quote-sent-date')?.addEventListener('change', updateQuoteDeadlineAlert);
+
+        // Règle 48h: si la date du lead change, recalculer le deadline soumission
+        document.querySelector('[name="leadDate"]')?.addEventListener('change', (e) => {
+            const leadDate = new Date(e.target.value);
+            if (isNaN(leadDate)) return;
+            const deadline = new Date(leadDate);
+            deadline.setDate(deadline.getDate() + 2);
+            if (deadline.getDay() === 6) deadline.setDate(deadline.getDate() + 2);
+            if (deadline.getDay() === 0) deadline.setDate(deadline.getDate() + 1);
+            const dueInput = document.getElementById('quote-due-date');
+            // Mettre à jour seulement si pas déjà une date manuelle ou si nouveau deal
+            if (dueInput && (!dueInput.value || !editingDealId)) {
+                dueInput.value = deadline.toISOString().split('T')[0];
+                updateQuoteDeadlineAlert();
+            }
+        });
 
         // Mark deal lost
         document.getElementById('btn-deal-lost').addEventListener('click', markDealLost);
