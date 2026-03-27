@@ -62,11 +62,34 @@ const App = (() => {
             navigator.serviceWorker.register('./sw.js').catch(() => {});
         }
 
+        // Load client database
+        Clients.loadClients();
+
         // Populate filters and dropdowns
         Pipeline.populateFilters();
 
         // Load settings
         loadSettingsUI();
+
+        // Setup client autocomplete on deal form
+        const clientNameInput = document.getElementById('deal-client-name');
+        if (clientNameInput) {
+            Clients.setupAutocomplete(clientNameInput, (client) => {
+                const form = document.getElementById('deal-form');
+                if (!form) return;
+                clientNameInput.value = client.name;
+                const phoneEl = form.querySelector('[name="clientPhone"]');
+                const emailEl = form.querySelector('[name="clientEmail"]');
+                const addressEl = form.querySelector('[name="clientAddress"]');
+                const accountEl = form.querySelector('[name="accountNumber"]');
+                const typeEl = form.querySelector('[name="clientType"]');
+                if (phoneEl && client.phone) phoneEl.value = client.phone;
+                if (emailEl && client.email) emailEl.value = client.email;
+                if (addressEl && client.address) addressEl.value = client.address;
+                if (accountEl && client.accountNumber) accountEl.value = client.accountNumber;
+                if (typeEl && client.clientType) typeEl.value = client.clientType;
+            });
+        }
 
         // Initial render
         renderCurrentView();
@@ -97,6 +120,7 @@ const App = (() => {
             payments: 'Paiements',
             team: 'Équipe',
             reports: 'Rapports',
+            clients: 'Clients',
             installations: 'Installations',
             plans: 'Lecteur de plans IA',
             settings: 'Paramètres',
@@ -113,6 +137,9 @@ const App = (() => {
                 break;
             case 'pipeline':
                 Pipeline.render();
+                break;
+            case 'clients':
+                Clients.render();
                 break;
             case 'deals':
                 Pipeline.renderList();
@@ -350,6 +377,7 @@ const App = (() => {
 
         if (editingDealId) {
             await Deals.update(editingDealId, data);
+            Clients.syncFromDeal(data);
             if (noteText) {
                 await Deals.addNote(editingDealId, noteText);
                 form.querySelector('[name="newNote"]').value = '';
@@ -366,6 +394,8 @@ const App = (() => {
                 if (noteText) await Deals.addNote(newDeal.id, noteText);
                 pendingFiles.forEach(f => saveAttachment(newDeal.id, f));
                 pendingFiles = [];
+                // Sync client to database
+                Clients.syncFromDeal(data);
             }
         }
 

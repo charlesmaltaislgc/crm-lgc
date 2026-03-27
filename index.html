@@ -62,6 +62,10 @@
                     <span class="nav-icon">🔄</span>
                     <span class="nav-text">Pipeline</span>
                 </a></li>
+                <li><a href="#" data-view="clients" class="nav-link">
+                    <span class="nav-icon">👤</span>
+                    <span class="nav-text">Clients</span>
+                </a></li>
                 <li><a href="#" data-view="deals" class="nav-link">
                     <span class="nav-icon">📋</span>
                     <span class="nav-text">Tous les deals</span>
@@ -213,6 +217,13 @@
                     </div>
                     <div id="list-view" class="list-view hidden">
                         <!-- Populated by pipeline.js -->
+                    </div>
+                </section>
+
+                <!-- CLIENTS VIEW -->
+                <section id="view-clients" class="view">
+                    <div id="clients-content">
+                        <!-- Populated by clients.js -->
                     </div>
                 </section>
 
@@ -500,8 +511,8 @@
                     <div class="form-tab-content active" data-form-tab-content="client">
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Nom complet *</label>
-                                <input type="text" name="clientName" required>
+                                <label>Nom complet * <small style="color:var(--text-muted);font-weight:400">— tapez pour chercher un client existant</small></label>
+                                <input type="text" name="clientName" id="deal-client-name" required autocomplete="off" placeholder="Rechercher ou nouveau client...">
                             </div>
                             <div class="form-group">
                                 <label>Téléphone *</label>
@@ -904,6 +915,60 @@
         </div>
     </div>
 
+    <!-- MODAL: Client -->
+    <div id="modal-client" class="modal hidden">
+        <div class="modal-overlay" onclick="document.getElementById('modal-client').classList.add('hidden')"></div>
+        <div class="modal-content modal-md">
+            <div class="modal-header">
+                <h3 id="modal-client-title">Client</h3>
+                <button class="modal-close" onclick="document.getElementById('modal-client').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="client-form">
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label>Nom complet *</label>
+                            <input type="text" id="client-name" placeholder="Nom du client" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input type="tel" id="client-phone" placeholder="(418) 555-1234">
+                        </div>
+                        <div class="form-group">
+                            <label>Courriel</label>
+                            <input type="email" id="client-email" placeholder="client@exemple.com">
+                        </div>
+                        <div class="form-group">
+                            <label>Adresse</label>
+                            <input type="text" id="client-address" placeholder="123 rue Principale, Québec">
+                        </div>
+                        <div class="form-group">
+                            <label># Compte Avantage</label>
+                            <input type="text" id="client-account" placeholder="AV-12345">
+                        </div>
+                        <div class="form-group">
+                            <label>Type de client</label>
+                            <select id="client-type">
+                                <option value="regulier">Régulier</option>
+                                <option value="entrepreneur">Entrepreneur</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Notes</label>
+                        <textarea id="client-notes" rows="2" placeholder="Notes sur le client..."></textarea>
+                    </div>
+                </form>
+                <div id="client-deal-history"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger hidden" id="btn-delete-client" onclick="Clients.deleteClient()">🗑️ Supprimer</button>
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-client').classList.add('hidden')">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="Clients.saveClient()">💾 Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL: Prise de mesures -->
     <div id="modal-mesure" class="modal hidden">
         <div class="modal-overlay" onclick="document.getElementById('modal-mesure').classList.add('hidden')"></div>
@@ -972,6 +1037,7 @@
     <script src="js/auth.js"></script>
     <script src="js/graph.js"></script>
     <script src="js/deals.js"></script>
+    <script src="js/clients.js"></script>
     <script src="js/pipeline.js"></script>
     <script src="js/alerts.js"></script>
     <script src="js/email-scanner.js"></script>
