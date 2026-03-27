@@ -1,9 +1,11 @@
-// ===== CRM LGC - Installations Module =====
+// ===== CRM LGC - Installations & Mesures Module =====
 // Calendar view for 4 installation teams + photo upload (before/after)
+// + Measurement tracking with alerts
 
 const Installations = (() => {
     const STORAGE_KEY = 'crm_installations';
     const PHOTOS_KEY = 'crm_install_photos';
+    const MESURES_KEY = 'crm_mesures';
 
     // 4 équipes d'installation
     const TEAMS = [
@@ -13,8 +15,11 @@ const Installations = (() => {
         { id: 'equipe-4', name: 'Équipe 4', color: '#ef4444', icon: '🔴' },
     ];
 
+    let currentTab = 'installations';
     let currentWeekStart = getMonday(new Date());
+    let mesuresWeekStart = getMonday(new Date());
     let installations = [];
+    let mesures = [];
     let photos = {};
     let selectedInstallation = null;
 
@@ -34,15 +39,27 @@ const Installations = (() => {
 
         const savedPhotos = localStorage.getItem(PHOTOS_KEY);
         photos = savedPhotos ? JSON.parse(savedPhotos) : {};
+
+        const savedMesures = localStorage.getItem(MESURES_KEY);
+        mesures = savedMesures ? JSON.parse(savedMesures) : generateDemoMesures();
+        if (!savedMesures) saveMesures();
     }
 
     function saveData() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(installations));
     }
 
+    function saveMesures() {
+        localStorage.setItem(MESURES_KEY, JSON.stringify(mesures));
+    }
+
     function savePhotos() {
         localStorage.setItem(PHOTOS_KEY, JSON.stringify(photos));
     }
+
+    // =========================================
+    // DEMO DATA
+    // =========================================
 
     function generateDemoInstallations() {
         const today = new Date();
@@ -88,6 +105,82 @@ const Installations = (() => {
         return demo;
     }
 
+    function generateDemoMesures() {
+        const today = new Date();
+        const demo = [];
+        const clients = [
+            { name: 'Tremblay, Martin', address: '123 rue Principale, Québec', products: 'Fenêtres (8)' },
+            { name: 'Gagnon, Sophie', address: '456 boul. Laurier, Lévis', products: 'Portes + Fenêtres (12)' },
+            { name: 'Roy, Pierre', address: '789 av. Royale, Beauport', products: 'Fenêtres (6)' },
+            { name: 'Bouchard, André', address: '321 rue du Pont, St-Nicolas', products: 'Portes (3)' },
+            { name: 'Côté, Luc', address: '654 ch. Ste-Foy, Québec', products: 'Fenêtres (15)' },
+            { name: 'Fortin, Marie', address: '987 rue Seigneuriale, Beauport', products: 'Portes + Fenêtres (9)' },
+            { name: 'Lavoie, Jacques', address: '147 boul. Hamel, Québec', products: 'Fenêtres (4)' },
+            { name: 'Morin, Isabelle', address: '258 rue Dorchester, Québec', products: 'Portes (2) + Fenêtres (7)' },
+            { name: 'Construction ABC', address: '369 av. Cartier, Québec', products: 'Fenêtres (22)' },
+            { name: 'Rénovations Pro Inc.', address: '741 rue St-Jean, Québec', products: 'Portes + Fenêtres (18)' },
+        ];
+        const assignees = ['sylvain', 'fabien', 'claude', 'nathalie'];
+
+        for (let i = 0; i < 10; i++) {
+            const c = clients[i];
+            // Some installations far, some close, some overdue
+            let installDaysFromNow;
+            let mesureStatus;
+            let mesureDate = null;
+
+            if (i < 2) {
+                // URGENT: installation dans < 2 semaines, mesures PAS faites
+                installDaysFromNow = 7 + Math.floor(Math.random() * 7);
+                mesureStatus = 'not-done';
+            } else if (i < 4) {
+                // WARNING: installation dans < 30 jours, mesures PAS faites
+                installDaysFromNow = 18 + Math.floor(Math.random() * 10);
+                mesureStatus = 'not-done';
+            } else if (i < 6) {
+                // OK: installation dans > 30 jours
+                installDaysFromNow = 35 + Math.floor(Math.random() * 20);
+                mesureStatus = 'not-done';
+            } else if (i < 8) {
+                // Mesures planifiées
+                installDaysFromNow = 20 + Math.floor(Math.random() * 15);
+                mesureStatus = 'scheduled';
+                const mDate = new Date(today);
+                mDate.setDate(mDate.getDate() + Math.floor(Math.random() * 7) + 1);
+                mesureDate = mDate.toISOString().split('T')[0];
+            } else {
+                // Mesures faites
+                installDaysFromNow = 15 + Math.floor(Math.random() * 10);
+                mesureStatus = 'completed';
+                const mDate = new Date(today);
+                mDate.setDate(mDate.getDate() - Math.floor(Math.random() * 10) - 1);
+                mesureDate = mDate.toISOString().split('T')[0];
+            }
+
+            const installDate = new Date(today);
+            installDate.setDate(installDate.getDate() + installDaysFromNow);
+
+            demo.push({
+                id: 'mes-' + Date.now() + '-' + i,
+                clientName: c.name,
+                address: c.address,
+                products: c.products,
+                assignedTo: assignees[i % assignees.length],
+                installDate: installDate.toISOString().split('T')[0],
+                mesureDate: mesureDate,
+                mesureStatus: mesureStatus, // 'not-done', 'scheduled', 'completed'
+                dealId: 'D' + (1000 + i),
+                notes: '',
+                createdAt: new Date().toISOString(),
+            });
+        }
+        return demo;
+    }
+
+    // =========================================
+    // MAIN RENDER
+    // =========================================
+
     function render() {
         const container = document.getElementById('installations-content');
         if (!container) return;
@@ -95,9 +188,40 @@ const Installations = (() => {
         loadData();
 
         container.innerHTML = `
+            <div class="install-tabs">
+                <button class="install-tab ${currentTab === 'installations' ? 'active' : ''}" onclick="Installations.switchTab('installations')">
+                    📅 Installations
+                </button>
+                <button class="install-tab ${currentTab === 'mesures' ? 'active' : ''}" onclick="Installations.switchTab('mesures')">
+                    📏 Prises de mesures
+                    ${getMesureAlertCount() > 0 ? `<span class="install-tab-badge">${getMesureAlertCount()}</span>` : ''}
+                </button>
+            </div>
+
+            <div id="tab-installations" class="${currentTab === 'installations' ? '' : 'hidden'}">
+                ${renderInstallationsTab()}
+            </div>
+
+            <div id="tab-mesures" class="${currentTab === 'mesures' ? '' : 'hidden'}">
+                ${renderMesuresTab()}
+            </div>
+        `;
+    }
+
+    function switchTab(tab) {
+        currentTab = tab;
+        render();
+    }
+
+    // =========================================
+    // INSTALLATIONS TAB
+    // =========================================
+
+    function renderInstallationsTab() {
+        return `
             <div class="install-calendar-nav">
                 <button class="btn btn-sm btn-outline" onclick="Installations.prevWeek()">◀ Semaine préc.</button>
-                <h3 class="install-week-title">${formatWeekTitle()}</h3>
+                <h3 class="install-week-title">${formatWeekTitle(currentWeekStart)}</h3>
                 <button class="btn btn-sm btn-outline" onclick="Installations.nextWeek()">Semaine suiv. ▶</button>
                 <button class="btn btn-sm btn-outline" onclick="Installations.goToday()" style="margin-left:8px">Aujourd'hui</button>
                 <button class="btn btn-sm btn-primary" onclick="Installations.openNewInstall()" style="margin-left:auto">+ Planifier</button>
@@ -109,7 +233,7 @@ const Installations = (() => {
             </div>
 
             <div class="install-calendar">
-                ${renderWeekHeader()}
+                ${renderWeekHeader(currentWeekStart)}
                 ${TEAMS.map(team => renderTeamRow(team)).join('')}
             </div>
 
@@ -119,18 +243,18 @@ const Installations = (() => {
         `;
     }
 
-    function formatWeekTitle() {
-        const end = new Date(currentWeekStart);
+    function formatWeekTitle(weekStart) {
+        const end = new Date(weekStart);
         end.setDate(end.getDate() + 4);
         const opts = { day: 'numeric', month: 'short' };
-        return `${currentWeekStart.toLocaleDateString('fr-CA', opts)} — ${end.toLocaleDateString('fr-CA', opts)} ${end.getFullYear()}`;
+        return `${weekStart.toLocaleDateString('fr-CA', opts)} — ${end.toLocaleDateString('fr-CA', opts)} ${end.getFullYear()}`;
     }
 
-    function renderWeekHeader() {
+    function renderWeekHeader(weekStart) {
         const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
         let html = '<div class="install-row install-header"><div class="install-team-cell">Équipe</div>';
         for (let i = 0; i < 5; i++) {
-            const date = new Date(currentWeekStart);
+            const date = new Date(weekStart);
             date.setDate(date.getDate() + i);
             const isToday = date.toISOString().split('T')[0] === new Date().toISOString().split('T')[0];
             html += `<div class="install-day-cell ${isToday ? 'today' : ''}">
@@ -224,7 +348,127 @@ const Installations = (() => {
         `;
     }
 
-    // === Navigation ===
+    // =========================================
+    // MESURES TAB
+    // =========================================
+
+    function getMesureAlertCount() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return mesures.filter(m => {
+            if (m.mesureStatus === 'completed') return false;
+            const install = new Date(m.installDate);
+            const daysUntil = Math.round((install - today) / (1000 * 60 * 60 * 24));
+            return daysUntil <= 30;
+        }).length;
+    }
+
+    function getMesureUrgency(m) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const install = new Date(m.installDate);
+        const daysUntil = Math.round((install - today) / (1000 * 60 * 60 * 24));
+
+        if (m.mesureStatus === 'completed') return { level: 'done', label: '✅ Faites', color: '#16a34a', daysUntil };
+        if (m.mesureStatus === 'scheduled') return { level: 'scheduled', label: `📅 Planifié (${m.mesureDate})`, color: '#0891b2', daysUntil };
+        if (daysUntil <= 14) return { level: 'critical', label: `🚨 URGENT — installation dans ${daysUntil}j`, color: '#dc2626', daysUntil };
+        if (daysUntil <= 30) return { level: 'warning', label: `⚠️ Installation dans ${daysUntil}j`, color: '#f59e0b', daysUntil };
+        return { level: 'ok', label: `Installation dans ${daysUntil}j`, color: '#64748b', daysUntil };
+    }
+
+    function renderMesuresTab() {
+        const sorted = [...mesures].sort((a, b) => {
+            const ua = getMesureUrgency(a);
+            const ub = getMesureUrgency(b);
+            const order = { critical: 0, warning: 1, ok: 2, scheduled: 3, done: 4 };
+            return (order[ua.level] || 5) - (order[ub.level] || 5) || ua.daysUntil - ub.daysUntil;
+        });
+
+        const critical = sorted.filter(m => getMesureUrgency(m).level === 'critical');
+        const warning = sorted.filter(m => getMesureUrgency(m).level === 'warning');
+        const ok = sorted.filter(m => getMesureUrgency(m).level === 'ok');
+        const scheduled = sorted.filter(m => getMesureUrgency(m).level === 'scheduled');
+        const done = sorted.filter(m => getMesureUrgency(m).level === 'done');
+
+        return `
+            ${critical.length > 0 ? `
+                <div class="mesure-alert-banner critical">
+                    🚨 <strong>${critical.length} prise(s) de mesures URGENTE(S)</strong> — Installation dans moins de 2 semaines et mesures pas faites!
+                </div>
+            ` : ''}
+            ${warning.length > 0 ? `
+                <div class="mesure-alert-banner warning">
+                    ⚠️ <strong>${warning.length} prise(s) de mesures à planifier</strong> — Installation dans moins de 30 jours
+                </div>
+            ` : ''}
+            ${critical.length === 0 && warning.length === 0 ? `
+                <div class="mesure-alert-banner ok">
+                    ✅ Toutes les mesures sont sous contrôle!
+                </div>
+            ` : ''}
+
+            <div class="mesure-toolbar">
+                <h3 style="margin:0">Suivi des prises de mesures (${mesures.length})</h3>
+                <button class="btn btn-sm btn-primary" onclick="Installations.openNewMesure()">+ Nouvelle prise de mesures</button>
+            </div>
+
+            <div class="mesure-list">
+                ${critical.length > 0 ? `<div class="mesure-section-title critical">🚨 URGENTES — Installation &lt; 2 semaines (${critical.length})</div>` : ''}
+                ${critical.map(m => renderMesureCard(m)).join('')}
+
+                ${warning.length > 0 ? `<div class="mesure-section-title warning">⚠️ À PLANIFIER — Installation &lt; 30 jours (${warning.length})</div>` : ''}
+                ${warning.map(m => renderMesureCard(m)).join('')}
+
+                ${scheduled.length > 0 ? `<div class="mesure-section-title scheduled">📅 PLANIFIÉES (${scheduled.length})</div>` : ''}
+                ${scheduled.map(m => renderMesureCard(m)).join('')}
+
+                ${ok.length > 0 ? `<div class="mesure-section-title ok">✅ OK — Installation &gt; 30 jours (${ok.length})</div>` : ''}
+                ${ok.map(m => renderMesureCard(m)).join('')}
+
+                ${done.length > 0 ? `<div class="mesure-section-title done">✔️ COMPLÉTÉES (${done.length})</div>` : ''}
+                ${done.map(m => renderMesureCard(m)).join('')}
+            </div>
+        `;
+    }
+
+    function renderMesureCard(m) {
+        const urgency = getMesureUrgency(m);
+        const team = Auth.getTeamMembers();
+        const vendor = team.find(t => t.id === m.assignedTo);
+        const vendorName = vendor ? vendor.name.split(' ')[0] : 'Non assigné';
+
+        return `
+            <div class="mesure-card ${urgency.level}" onclick="Installations.openMesureDetail('${m.id}')">
+                <div class="mesure-card-left">
+                    <div class="mesure-urgency-dot" style="background:${urgency.color}"></div>
+                </div>
+                <div class="mesure-card-body">
+                    <div class="mesure-card-client">${m.clientName}</div>
+                    <div class="mesure-card-address">${m.address}</div>
+                    <div class="mesure-card-products">${m.products}</div>
+                </div>
+                <div class="mesure-card-right">
+                    <div class="mesure-card-urgency" style="color:${urgency.color}">${urgency.label}</div>
+                    <div class="mesure-card-meta">
+                        <span>📅 Install: ${formatDateShort(m.installDate)}</span>
+                        <span>👤 ${vendorName}</span>
+                    </div>
+                    ${m.mesureStatus === 'scheduled' && m.mesureDate ? `<div class="mesure-card-meta"><span>📏 Mesures: ${formatDateShort(m.mesureDate)}</span></div>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    function formatDateShort(dateStr) {
+        if (!dateStr) return '--';
+        const d = new Date(dateStr + 'T00:00:00');
+        return d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+    }
+
+    // =========================================
+    // NAVIGATION
+    // =========================================
+
     function prevWeek() {
         currentWeekStart.setDate(currentWeekStart.getDate() - 7);
         render();
@@ -240,7 +484,10 @@ const Installations = (() => {
         render();
     }
 
-    // === Drag & Drop ===
+    // =========================================
+    // DRAG & DROP (installations)
+    // =========================================
+
     let draggedInstId = null;
 
     function handleDragStart(e, instId) {
@@ -266,7 +513,10 @@ const Installations = (() => {
         draggedInstId = null;
     }
 
-    // === New installation modal ===
+    // =========================================
+    // INSTALLATION MODAL
+    // =========================================
+
     function openNewInstall(teamId, dateStr) {
         selectedInstallation = null;
         const modal = document.getElementById('modal-installation');
@@ -286,7 +536,6 @@ const Installations = (() => {
         document.getElementById('install-photos-section').innerHTML = '';
         document.getElementById('btn-delete-install').classList.add('hidden');
 
-        // Populate deal select with stage 11-13 deals
         populateDealSelect();
     }
 
@@ -331,7 +580,6 @@ const Installations = (() => {
     }
 
     function saveInstallation() {
-        const form = document.getElementById('install-form');
         const data = {
             clientName: document.getElementById('install-client').value.trim(),
             address: document.getElementById('install-address').value.trim(),
@@ -378,7 +626,126 @@ const Installations = (() => {
         App.showToast('Installation supprimée', 'info');
     }
 
-    // === Photos (before/after) ===
+    // =========================================
+    // MESURE MODAL
+    // =========================================
+
+    let selectedMesure = null;
+
+    function openNewMesure() {
+        selectedMesure = null;
+        const modal = document.getElementById('modal-mesure');
+        if (!modal) return;
+
+        modal.classList.remove('hidden');
+        document.getElementById('modal-mesure-title').textContent = 'Nouvelle prise de mesures';
+        document.getElementById('mesure-form').reset();
+        document.getElementById('mesure-status').value = 'not-done';
+        document.getElementById('btn-delete-mesure').classList.add('hidden');
+
+        populateMesureVendors();
+    }
+
+    function openMesureDetail(mesId) {
+        const m = mesures.find(x => x.id === mesId);
+        if (!m) return;
+
+        selectedMesure = m;
+        const modal = document.getElementById('modal-mesure');
+        if (!modal) return;
+
+        modal.classList.remove('hidden');
+        document.getElementById('modal-mesure-title').textContent = `Mesures - ${m.clientName}`;
+
+        document.getElementById('mesure-client').value = m.clientName || '';
+        document.getElementById('mesure-address').value = m.address || '';
+        document.getElementById('mesure-products').value = m.products || '';
+        document.getElementById('mesure-assigned').value = m.assignedTo || '';
+        document.getElementById('mesure-install-date').value = m.installDate || '';
+        document.getElementById('mesure-date').value = m.mesureDate || '';
+        document.getElementById('mesure-status').value = m.mesureStatus || 'not-done';
+        document.getElementById('mesure-notes').value = m.notes || '';
+
+        document.getElementById('btn-delete-mesure').classList.remove('hidden');
+        populateMesureVendors();
+
+        // Show urgency info
+        const urgency = getMesureUrgency(m);
+        const infoEl = document.getElementById('mesure-urgency-info');
+        if (infoEl) {
+            infoEl.style.display = 'block';
+            infoEl.style.color = urgency.color;
+            infoEl.style.fontWeight = '700';
+            infoEl.innerHTML = urgency.label;
+        }
+    }
+
+    function populateMesureVendors() {
+        const select = document.getElementById('mesure-assigned');
+        if (!select) return;
+        const team = Auth.getTeamMembers();
+        const current = select.value;
+        select.innerHTML = '<option value="">— Non assigné —</option>';
+        team.forEach(member => {
+            if (['vendeur', 'directeur', 'directeur_usine'].includes(member.role)) {
+                select.innerHTML += `<option value="${member.id}">${member.name}</option>`;
+            }
+        });
+        select.value = current;
+    }
+
+    function saveMesure() {
+        const data = {
+            clientName: document.getElementById('mesure-client').value.trim(),
+            address: document.getElementById('mesure-address').value.trim(),
+            products: document.getElementById('mesure-products').value.trim(),
+            assignedTo: document.getElementById('mesure-assigned').value,
+            installDate: document.getElementById('mesure-install-date').value,
+            mesureDate: document.getElementById('mesure-date').value || null,
+            mesureStatus: document.getElementById('mesure-status').value,
+            notes: document.getElementById('mesure-notes').value.trim(),
+        };
+
+        if (!data.clientName || !data.installDate) {
+            App.showToast('Client et date d\'installation sont requis', 'danger');
+            return;
+        }
+
+        // If mesureDate is set and status is not-done, auto-set to scheduled
+        if (data.mesureDate && data.mesureStatus === 'not-done') {
+            data.mesureStatus = 'scheduled';
+        }
+
+        if (selectedMesure) {
+            Object.assign(selectedMesure, data);
+        } else {
+            data.id = 'mes-' + Date.now();
+            data.createdAt = new Date().toISOString();
+            data.dealId = null;
+            mesures.push(data);
+        }
+
+        saveMesures();
+        document.getElementById('modal-mesure').classList.add('hidden');
+        render();
+        App.showToast(selectedMesure ? 'Mesures mises à jour' : 'Prise de mesures ajoutée', 'success');
+    }
+
+    function deleteMesure() {
+        if (!selectedMesure) return;
+        if (!confirm(`Supprimer les mesures de ${selectedMesure.clientName}?`)) return;
+
+        mesures = mesures.filter(m => m.id !== selectedMesure.id);
+        saveMesures();
+        document.getElementById('modal-mesure').classList.add('hidden');
+        render();
+        App.showToast('Mesures supprimées', 'info');
+    }
+
+    // =========================================
+    // PHOTOS (before/after for installations)
+    // =========================================
+
     function renderPhotos(instId) {
         const container = document.getElementById('install-photos-section');
         if (!container) return;
@@ -430,7 +797,6 @@ const Installations = (() => {
         Array.from(files).forEach(file => {
             const reader = new FileReader();
             reader.onload = (ev) => {
-                // Resize to max 800px to save localStorage space
                 const img = new Image();
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
@@ -460,8 +826,48 @@ const Installations = (() => {
         renderPhotos(instId);
     }
 
+    // =========================================
+    // PUBLIC API for alerts integration
+    // =========================================
+
+    function getMesureAlerts() {
+        loadData();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const alertList = [];
+
+        mesures.forEach(m => {
+            if (m.mesureStatus === 'completed') return;
+            const install = new Date(m.installDate);
+            const daysUntil = Math.round((install - today) / (1000 * 60 * 60 * 24));
+
+            if (daysUntil <= 14 && m.mesureStatus !== 'scheduled') {
+                alertList.push({
+                    type: 'urgent',
+                    category: 'MESURES URGENTES',
+                    text: `${m.clientName} — Installation dans ${daysUntil}j, mesures PAS faites!`,
+                    delay: `${daysUntil}j`,
+                    priority: 1,
+                    mesureId: m.id,
+                });
+            } else if (daysUntil <= 30 && m.mesureStatus !== 'scheduled') {
+                alertList.push({
+                    type: 'warning',
+                    category: 'MESURES À PLANIFIER',
+                    text: `${m.clientName} — Installation dans ${daysUntil}j, mesures pas encore planifiées`,
+                    delay: `${daysUntil}j`,
+                    priority: 2,
+                    mesureId: m.id,
+                });
+            }
+        });
+
+        return alertList;
+    }
+
     return {
         render,
+        switchTab,
         prevWeek,
         nextWeek,
         goToday,
@@ -473,5 +879,10 @@ const Installations = (() => {
         handleDrop,
         handlePhotoUpload,
         removePhoto,
+        openNewMesure,
+        openMesureDetail,
+        saveMesure,
+        deleteMesure,
+        getMesureAlerts,
     };
 })();

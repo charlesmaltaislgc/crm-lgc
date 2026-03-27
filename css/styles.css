@@ -1962,6 +1962,205 @@ a:hover { text-decoration: underline; }
     gap: 12px 16px;
 }
 
+/* Install tabs */
+.install-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0;
+}
+
+.install-tab {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+    position: relative;
+    margin-bottom: -2px;
+}
+
+.install-tab:hover {
+    color: var(--primary);
+    background: var(--primary-light);
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.install-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.install-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--danger);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 6px;
+    animation: pulse-alert 1.5s infinite;
+}
+
+/* Mesure alert banners */
+.mesure-alert-banner {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.mesure-alert-banner.critical {
+    background: var(--danger-light);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+}
+
+.mesure-alert-banner.warning {
+    background: var(--warning-light);
+    border: 1px solid var(--warning);
+    color: #92400e;
+}
+
+.mesure-alert-banner.ok {
+    background: var(--success-light);
+    border: 1px solid var(--success);
+    color: var(--success);
+}
+
+.mesure-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+/* Mesure section titles */
+.mesure-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 0 6px;
+    margin-top: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.mesure-section-title.critical { color: var(--danger); }
+.mesure-section-title.warning { color: #b45309; }
+.mesure-section-title.scheduled { color: var(--info); }
+.mesure-section-title.ok { color: var(--text-muted); }
+.mesure-section-title.done { color: var(--success); }
+
+/* Mesure cards */
+.mesure-card {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    gap: 12px;
+}
+
+.mesure-card:hover {
+    box-shadow: var(--shadow);
+    transform: translateY(-1px);
+}
+
+.mesure-card.critical {
+    border-left: 4px solid var(--danger);
+    background: #fef2f2;
+}
+
+.mesure-card.warning {
+    border-left: 4px solid var(--warning);
+    background: #fffbeb;
+}
+
+.mesure-card.scheduled {
+    border-left: 4px solid var(--info);
+}
+
+.mesure-card.done {
+    border-left: 4px solid var(--success);
+    opacity: 0.7;
+}
+
+.mesure-card-left {
+    display: flex;
+    align-items: center;
+    padding-right: 4px;
+}
+
+.mesure-urgency-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.mesure-card.critical .mesure-urgency-dot {
+    animation: pulse-alert 1.5s infinite;
+}
+
+.mesure-card-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.mesure-card-client {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 2px;
+}
+
+.mesure-card-address {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.mesure-card-products {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.mesure-card-right {
+    text-align: right;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+}
+
+.mesure-card-urgency {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.mesure-card-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    justify-content: flex-end;
+}
+
 @media (max-width: 768px) {
     .install-row {
         grid-template-columns: 80px repeat(5, 1fr);
@@ -1974,6 +2173,15 @@ a:hover { text-decoration: underline; }
     }
     .form-grid-2 {
         grid-template-columns: 1fr;
+    }
+    .mesure-card {
+        flex-direction: column;
+    }
+    .mesure-card-right {
+        text-align: left;
+    }
+    .mesure-card-meta {
+        justify-content: flex-start;
     }
 }
 

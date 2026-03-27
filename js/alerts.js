@@ -144,6 +144,12 @@ const Alerts = (() => {
             }
         });
 
+        // 10. Mesures installation: alerte si installation proche et mesures pas faites
+        if (typeof Installations !== 'undefined' && Installations.getMesureAlerts) {
+            const mesureAlerts = Installations.getMesureAlerts();
+            mesureAlerts.forEach(a => alerts.push(a));
+        }
+
         // Sort by priority
         alerts.sort((a, b) => a.priority - b.priority);
 
@@ -166,14 +172,18 @@ const Alerts = (() => {
         section.classList.remove('empty');
         section.querySelector('.section-title').textContent = `🔴 À faire aujourd'hui (${alerts.length})`;
 
-        container.innerHTML = alerts.slice(0, 10).map(alert => `
+        container.innerHTML = alerts.slice(0, 12).map(alert => {
+            const clickAction = alert.mesureId
+                ? `App.navigate('installations');setTimeout(()=>Installations.switchTab('mesures'),100)`
+                : `App.openDeal('${alert.dealId}')`;
+            return `
             <div class="alert-item ${alert.type === 'warning' ? 'warning' : alert.type === 'info' ? 'info' : ''}"
-                 onclick="App.openDeal('${alert.dealId}')">
+                 onclick="${clickAction}">
                 <span class="alert-type">${alert.category}</span>
                 <span class="alert-text">${alert.text}</span>
                 ${alert.delay ? `<span class="alert-delay">${alert.delay}</span>` : ''}
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
 
         if (alerts.length > 10) {
             container.innerHTML += `<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:12px">

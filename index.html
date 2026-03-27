@@ -904,6 +904,67 @@
         </div>
     </div>
 
+    <!-- MODAL: Prise de mesures -->
+    <div id="modal-mesure" class="modal hidden">
+        <div class="modal-overlay" onclick="document.getElementById('modal-mesure').classList.add('hidden')"></div>
+        <div class="modal-content modal-md">
+            <div class="modal-header">
+                <h3 id="modal-mesure-title">Prise de mesures</h3>
+                <button class="modal-close" onclick="document.getElementById('modal-mesure').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="mesure-urgency-info" style="display:none;padding:8px 12px;border-radius:8px;background:var(--bg);margin-bottom:12px;font-size:14px"></div>
+                <form id="mesure-form">
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label>Client *</label>
+                            <input type="text" id="mesure-client" placeholder="Nom du client" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Adresse</label>
+                            <input type="text" id="mesure-address" placeholder="Adresse du chantier">
+                        </div>
+                        <div class="form-group">
+                            <label>Produits à mesurer</label>
+                            <input type="text" id="mesure-products" placeholder="Ex: Fenêtres (8), Portes (3)">
+                        </div>
+                        <div class="form-group">
+                            <label>Assigné à</label>
+                            <select id="mesure-assigned">
+                                <option value="">— Non assigné —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Date d'installation prévue *</label>
+                            <input type="date" id="mesure-install-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Date de prise de mesures</label>
+                            <input type="date" id="mesure-date">
+                        </div>
+                        <div class="form-group">
+                            <label>Statut</label>
+                            <select id="mesure-status">
+                                <option value="not-done">❌ Pas faites</option>
+                                <option value="scheduled">📅 Planifiées</option>
+                                <option value="completed">✅ Complétées</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Notes</label>
+                        <textarea id="mesure-notes" rows="2" placeholder="Notes..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger hidden" id="btn-delete-mesure" onclick="Installations.deleteMesure()">🗑️ Supprimer</button>
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-mesure').classList.add('hidden')">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="Installations.saveMesure()">💾 Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast notifications -->
     <div id="toast-container" class="toast-container"></div>
 
