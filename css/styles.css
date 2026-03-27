@@ -1322,6 +1322,44 @@ a:hover { text-decoration: underline; }
     font-weight: 700;
 }
 
+/* ===== Bouton Envoyer animé ===== */
+.btn-save-animated {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 10px 28px;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-save-animated:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 15px rgba(26, 86, 219, 0.4);
+}
+
+.btn-save-animated:active {
+    transform: scale(0.97);
+}
+
+.btn-save-animated.saving {
+    pointer-events: none;
+}
+
+.btn-save-animated.saved {
+    background: #22c55e !important;
+    border-color: #22c55e !important;
+}
+
+.btn-action-rdv:hover {
+    background: #dbeafe;
+    border-color: #3b82f6;
+}
+
+.btn-action-contract:hover {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+
 /* ===== Notes Timeline ===== */
 .notes-timeline {
     margin-bottom: 16px;

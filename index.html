@@ -739,11 +739,11 @@
                     <span class="deal-status-indicator" id="deal-status-indicator"></span>
                 </div>
                 <div class="modal-footer-right">
-                    <button type="button" class="btn btn-outline" data-modal="modal-deal">Annuler</button>
-                    <button type="button" class="btn btn-outline" id="btn-deal-rdv" onclick="Calendar.showBookingModal(App._editingDealId)">📅 RDV</button>
-                    <button type="button" class="btn btn-outline" id="btn-deal-contract" onclick="Contracts.createContract(App._editingDealId)">✍️ Contrat</button>
-                    <button type="button" class="btn btn-danger hidden" id="btn-deal-lost">Marquer perdu</button>
-                    <button type="button" class="btn btn-primary" id="btn-save-deal">Sauvegarder</button>
+                    <button type="button" class="btn btn-outline" data-modal="modal-deal">✖ Annuler</button>
+                    <button type="button" class="btn btn-outline btn-action-rdv" id="btn-deal-rdv" onclick="Calendar.showBookingModal(App._editingDealId)">📅 RDV</button>
+                    <button type="button" class="btn btn-outline btn-action-contract" id="btn-deal-contract" onclick="Contracts.createContract(App._editingDealId)">✍️ Contrat</button>
+                    <button type="button" class="btn btn-danger hidden" id="btn-deal-lost">💀 Perdu</button>
+                    <button type="button" class="btn btn-primary btn-save-animated" id="btn-save-deal">🚀 Envoyer</button>
                 </div>
             </div>
         </div>

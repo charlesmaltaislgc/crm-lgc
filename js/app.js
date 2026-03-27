@@ -313,6 +313,7 @@ const App = (() => {
     }
 
     async function saveDeal() {
+        const saveBtn = document.getElementById('btn-save-deal');
         const form = document.getElementById('deal-form');
         const formData = new FormData(form);
         const data = {};
@@ -329,31 +330,43 @@ const App = (() => {
         // Add note if present
         const noteText = form.querySelector('[name="newNote"]').value.trim();
 
+        // Animation bouton
+        saveBtn.classList.add('saving');
+        saveBtn.innerHTML = '🚀 Envoi...';
+
         if (editingDealId) {
             await Deals.update(editingDealId, data);
             if (noteText) {
                 await Deals.addNote(editingDealId, noteText);
                 form.querySelector('[name="newNote"]').value = '';
             }
-            showToast('Deal mis à jour', 'success');
         } else {
             if (!data.clientName || !data.clientPhone) {
                 showToast('Nom et téléphone requis', 'error');
+                saveBtn.classList.remove('saving');
+                saveBtn.innerHTML = '🚀 Envoyer';
                 return;
             }
             const newDeal = await Deals.create(data);
             if (newDeal) {
                 if (noteText) await Deals.addNote(newDeal.id, noteText);
-                // Attacher les fichiers en attente
                 pendingFiles.forEach(f => saveAttachment(newDeal.id, f));
                 pendingFiles = [];
             }
-            showToast('Nouveau deal créé!', 'success');
         }
 
-        closeDealModal();
-        renderCurrentView();
-        Alerts.refresh();
+        // Animation succès
+        saveBtn.classList.add('saved');
+        saveBtn.innerHTML = '✅ Sauvegardé!';
+        showToast(editingDealId ? 'Deal mis à jour 🎯' : 'Nouveau deal créé! 🚀', 'success');
+
+        setTimeout(() => {
+            saveBtn.classList.remove('saving', 'saved');
+            saveBtn.innerHTML = '🚀 Envoyer';
+            closeDealModal();
+            renderCurrentView();
+            Alerts.refresh();
+        }, 800);
     }
 
     async function markDealLost() {
