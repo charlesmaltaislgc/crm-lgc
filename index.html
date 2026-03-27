@@ -521,12 +521,22 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Courriel</label>
-                                <input type="email" name="clientEmail">
+                                <label>Courriel *</label>
+                                <input type="email" name="clientEmail" required placeholder="courriel@exemple.com">
                             </div>
                             <div class="form-group">
-                                <label>Adresse</label>
-                                <input type="text" name="clientAddress">
+                                <label>Téléphone 2 <small style="color:var(--text-muted);font-weight:400">— optionnel</small></label>
+                                <input type="tel" name="clientPhone2" placeholder="(418) 555-0000">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Courriel 2 <small style="color:var(--text-muted);font-weight:400">— optionnel</small></label>
+                                <input type="email" name="clientEmail2" placeholder="courriel2@exemple.com">
+                            </div>
+                            <div class="form-group">
+                                <label>Adresse <button type="button" id="btn-open-maps" class="btn-maps-link" onclick="App.openGoogleMaps()" title="Ouvrir dans Google Maps">🗺️ Maps</button></label>
+                                <input type="text" name="clientAddress" id="deal-client-address">
                             </div>
                         </div>
                         <div class="form-row">
@@ -851,15 +861,23 @@
             </div>
             <div class="modal-body">
                 <form id="install-form">
+                    <!-- Recherche deal/client -->
+                    <div class="form-group install-deal-search">
+                        <label>Lead / Client * <small style="color:var(--text-muted);font-weight:400">— chercher dans la base de données</small></label>
+                        <select id="install-deal" required onchange="Installations.onInstallDealChange()">
+                            <option value="">— Chercher un lead/client... —</option>
+                        </select>
+                    </div>
+                    <!-- Info client auto-remplie -->
+                    <div id="install-client-info" class="install-client-summary hidden">
+                        <span id="install-client-name-display"></span>
+                        <span id="install-client-address-display"></span>
+                        <a id="install-client-maps-link" href="#" target="_blank" class="btn-maps-link">🗺️ Maps</a>
+                    </div>
+                    <!-- Champs cachés gardés pour compat -->
+                    <input type="hidden" id="install-client">
+                    <input type="hidden" id="install-address">
                     <div class="form-grid-2">
-                        <div class="form-group">
-                            <label>Client *</label>
-                            <input type="text" id="install-client" placeholder="Nom du client" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Adresse</label>
-                            <input type="text" id="install-address" placeholder="Adresse d'installation">
-                        </div>
                         <div class="form-group">
                             <label>Équipe *</label>
                             <select id="install-team" required>
@@ -871,8 +889,12 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Date *</label>
+                            <label>📅 Date d'installation *</label>
                             <input type="date" id="install-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label>📐 Date prise de mesures</label>
+                            <input type="date" id="install-mesure-date">
                         </div>
                         <div class="form-group">
                             <label>Produits</label>
@@ -888,12 +910,6 @@
                                 <option value="scheduled">📅 Planifié</option>
                                 <option value="in-progress">🔨 En cours</option>
                                 <option value="completed">✅ Complété</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Deal lié</label>
-                            <select id="install-deal">
-                                <option value="">— Aucun —</option>
                             </select>
                         </div>
                     </div>
@@ -980,15 +996,20 @@
             <div class="modal-body">
                 <div id="mesure-urgency-info" style="display:none;padding:8px 12px;border-radius:8px;background:var(--bg);margin-bottom:12px;font-size:14px"></div>
                 <form id="mesure-form">
+                    <div class="form-group install-deal-search">
+                        <label>Lead / Client * <small style="color:var(--text-muted);font-weight:400">— chercher dans la base de données</small></label>
+                        <select id="mesure-deal" required onchange="Installations.onMesureDealChange()">
+                            <option value="">— Chercher un lead/client... —</option>
+                        </select>
+                    </div>
+                    <div id="mesure-client-info" class="install-client-summary hidden">
+                        <span id="mesure-client-name-display"></span>
+                        <span id="mesure-client-address-display"></span>
+                        <a id="mesure-client-maps-link" href="#" target="_blank" class="btn-maps-link">🗺️ Maps</a>
+                    </div>
+                    <input type="hidden" id="mesure-client">
+                    <input type="hidden" id="mesure-address">
                     <div class="form-grid-2">
-                        <div class="form-group">
-                            <label>Client *</label>
-                            <input type="text" id="mesure-client" placeholder="Nom du client" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Adresse</label>
-                            <input type="text" id="mesure-address" placeholder="Adresse du chantier">
-                        </div>
                         <div class="form-group">
                             <label>Produits à mesurer</label>
                             <input type="text" id="mesure-products" placeholder="Ex: Fenêtres (8), Portes (3)">
@@ -1000,15 +1021,15 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Date d'installation prévue *</label>
+                            <label>📅 Date d'installation prévue *</label>
                             <input type="date" id="mesure-install-date" required>
                         </div>
                         <div class="form-group">
-                            <label>Date de prise de mesures</label>
+                            <label>📐 Date de prise de mesures</label>
                             <input type="date" id="mesure-date">
                         </div>
                         <div class="form-group">
-                            <label>Statut</label>
+                            <label>Statut des mesures</label>
                             <select id="mesure-status">
                                 <option value="not-done">❌ Pas faites</option>
                                 <option value="scheduled">📅 Planifiées</option>

@@ -245,7 +245,7 @@ const App = (() => {
         const form = document.getElementById('deal-form');
         // Populate form fields
         const fields = [
-            'clientName', 'clientPhone', 'clientEmail', 'clientAddress',
+            'clientName', 'clientPhone', 'clientPhone2', 'clientEmail', 'clientEmail2', 'clientAddress',
             'accountNumber', 'clientType', 'leadSource', 'projectType', 'products', 'description',
             'quoteAmount', 'contractAmount', 'stage', 'assignedTo',
             'mecinovQuoteNum', 'mecinovOrderNum', 'mecinovInvoiceNum',
@@ -351,6 +351,12 @@ const App = (() => {
         pendingFiles = [];
     }
 
+    function openGoogleMaps() {
+        const address = document.getElementById('deal-client-address')?.value?.trim();
+        if (!address) { showToast('Entrez une adresse d\'abord', 'warning'); return; }
+        window.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address), '_blank');
+    }
+
     async function saveDeal() {
         const saveBtn = document.getElementById('btn-save-deal');
         const form = document.getElementById('deal-form');
@@ -383,8 +389,8 @@ const App = (() => {
                 form.querySelector('[name="newNote"]').value = '';
             }
         } else {
-            if (!data.clientName || !data.clientPhone) {
-                showToast('Nom et téléphone requis', 'error');
+            if (!data.clientName || !data.clientPhone || !data.clientEmail) {
+                showToast('Nom, téléphone et courriel sont requis', 'error');
                 saveBtn.classList.remove('saving');
                 saveBtn.innerHTML = '🚀 Envoyer';
                 return;
@@ -1116,6 +1122,7 @@ const App = (() => {
         removePendingFile,
         updateQuoteDeadlineAlert,
         getDeadlineStatus,
+        openGoogleMaps,
         get _editingDealId() { return editingDealId; },
     };
 })();

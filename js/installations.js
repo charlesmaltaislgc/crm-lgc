@@ -294,8 +294,10 @@ const Installations = (() => {
         modal.classList.remove('hidden');
         document.getElementById('modal-install-title').textContent = 'Planifier une installation';
 
-        const form = document.getElementById('install-form');
-        form.reset();
+        document.getElementById('install-form').reset();
+        document.getElementById('install-client').value = '';
+        document.getElementById('install-address').value = '';
+        document.getElementById('install-client-info').classList.add('hidden');
 
         if (teamId) document.getElementById('install-team').value = teamId;
         if (dateStr) document.getElementById('install-date').value = dateStr;
@@ -305,7 +307,7 @@ const Installations = (() => {
         document.getElementById('install-photos-section').innerHTML = '';
         document.getElementById('btn-delete-install').classList.add('hidden');
 
-        populateDealSelect();
+        populateDealSelect('install-deal', null);
     }
 
     function openDetail(instId) {
@@ -323,46 +325,111 @@ const Installations = (() => {
         document.getElementById('install-address').value = inst.address || '';
         document.getElementById('install-team').value = inst.teamId || '';
         document.getElementById('install-date').value = inst.date || '';
+        document.getElementById('install-mesure-date').value = inst.mesureDate || '';
         document.getElementById('install-products').value = inst.products || '';
         document.getElementById('install-hours').value = inst.estimatedHours || '';
         document.getElementById('install-status').value = inst.status || 'scheduled';
         document.getElementById('install-notes').value = inst.notes || '';
-        document.getElementById('install-deal').value = inst.dealId || '';
 
         document.getElementById('btn-delete-install').classList.remove('hidden');
 
-        populateDealSelect();
+        populateDealSelect('install-deal', inst.dealId || null);
+
+        // Afficher info client si deal lié
+        if (inst.clientName) {
+            document.getElementById('install-client-name-display').textContent = '👤 ' + inst.clientName;
+            document.getElementById('install-client-address-display').textContent = inst.address ? ' — 📍 ' + inst.address : '';
+            const mapsLink = document.getElementById('install-client-maps-link');
+            mapsLink.href = inst.address ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(inst.address) : '#';
+            mapsLink.style.display = inst.address ? '' : 'none';
+            document.getElementById('install-client-info').classList.remove('hidden');
+        }
+
         renderPhotos(instId);
     }
 
-    function populateDealSelect() {
-        const select = document.getElementById('install-deal');
+    function populateDealSelect(selectId, currentDealId) {
+        const select = document.getElementById(selectId);
         if (!select) return;
-        const deals = Deals.getAll ? Deals.getAll() : [];
-        select.innerHTML = '<option value="">— Aucun deal lié —</option>';
-        deals.filter(d => d.stage >= 11 && d.stage <= 13).forEach(d => {
-            select.innerHTML += `<option value="${d.id}">${d.clientName} (Étape ${d.stage})</option>`;
+        const deals = (Deals.getAll ? Deals.getAll() : []).filter(d => d.status === 'active');
+        select.innerHTML = '<option value="">— Chercher un lead/client... —</option>';
+        // Trier par nom client
+        deals.slice().sort((a, b) => a.clientName.localeCompare(b.clientName)).forEach(d => {
+            const stage = Deals.getStageName ? Deals.getStageName(d.stage) : `Étape ${d.stage}`;
+            select.innerHTML += `<option value="${d.id}" data-client="${d.clientName}" data-address="${d.clientAddress || ''}" data-products="${d.products || ''}">${d.clientName} — ${stage}</option>`;
         });
-        if (selectedInstallation?.dealId) {
-            select.value = selectedInstallation.dealId;
+        if (currentDealId) select.value = currentDealId;
+    }
+
+    function onInstallDealChange() {
+        const select = document.getElementById('install-deal');
+        const opt = select.options[select.selectedIndex];
+        const clientName = opt?.dataset?.client || '';
+        const address = opt?.dataset?.address || '';
+        const products = opt?.dataset?.products || '';
+
+        document.getElementById('install-client').value = clientName;
+        document.getElementById('install-address').value = address;
+        if (products) document.getElementById('install-products').value = products;
+
+        const infoEl = document.getElementById('install-client-info');
+        if (clientName) {
+            document.getElementById('install-client-name-display').textContent = '👤 ' + clientName;
+            document.getElementById('install-client-address-display').textContent = address ? ' — 📍 ' + address : '';
+            const mapsLink = document.getElementById('install-client-maps-link');
+            mapsLink.href = address ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address) : '#';
+            mapsLink.style.display = address ? '' : 'none';
+            infoEl.classList.remove('hidden');
+        } else {
+            infoEl.classList.add('hidden');
+        }
+    }
+
+    function onMesureDealChange() {
+        const select = document.getElementById('mesure-deal');
+        const opt = select.options[select.selectedIndex];
+        const clientName = opt?.dataset?.client || '';
+        const address = opt?.dataset?.address || '';
+        const products = opt?.dataset?.products || '';
+
+        document.getElementById('mesure-client').value = clientName;
+        document.getElementById('mesure-address').value = address;
+        if (products) document.getElementById('mesure-products').value = products;
+
+        const infoEl = document.getElementById('mesure-client-info');
+        if (clientName) {
+            document.getElementById('mesure-client-name-display').textContent = '👤 ' + clientName;
+            document.getElementById('mesure-client-address-display').textContent = address ? ' — 📍 ' + address : '';
+            const mapsLink = document.getElementById('mesure-client-maps-link');
+            mapsLink.href = address ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address) : '#';
+            mapsLink.style.display = address ? '' : 'none';
+            infoEl.classList.remove('hidden');
+        } else {
+            infoEl.classList.add('hidden');
         }
     }
 
     function saveInstallation() {
+        const dealId = document.getElementById('install-deal').value || null;
         const data = {
             clientName: document.getElementById('install-client').value.trim(),
             address: document.getElementById('install-address').value.trim(),
             teamId: document.getElementById('install-team').value,
             date: document.getElementById('install-date').value,
+            mesureDate: document.getElementById('install-mesure-date').value || null,
             products: document.getElementById('install-products').value.trim(),
             estimatedHours: parseInt(document.getElementById('install-hours').value) || 0,
             status: document.getElementById('install-status').value,
             notes: document.getElementById('install-notes').value.trim(),
-            dealId: document.getElementById('install-deal').value || null,
+            dealId,
         };
 
-        if (!data.clientName || !data.teamId || !data.date) {
-            App.showToast('Client, équipe et date sont requis', 'danger');
+        if (!data.dealId && !data.clientName) {
+            App.showToast('Sélectionnez un lead/client dans la liste', 'danger');
+            return;
+        }
+        if (!data.teamId || !data.date) {
+            App.showToast('Équipe et date d\'installation sont requis', 'danger');
             return;
         }
 
@@ -532,5 +599,7 @@ const Installations = (() => {
         handlePhotoUpload,
         removePhoto,
         getMesureAlerts,
+        onInstallDealChange,
+        onMesureDealChange,
     };
 })();
