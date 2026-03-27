@@ -201,16 +201,24 @@ const Graph = (() => {
         return data?.value || [];
     }
 
-    async function sendEmail(to, subject, body) {
+    async function sendEmail(to, subject, body, cc = null, attachments = []) {
+        const message = {
+            subject,
+            body: { contentType: 'HTML', content: body },
+            toRecipients: [{ emailAddress: { address: to } }],
+        };
+        if (cc) message.ccRecipients = [{ emailAddress: { address: cc } }];
+        if (attachments.length > 0) {
+            message.attachments = attachments.map(a => ({
+                '@odata.type': '#microsoft.graph.fileAttachment',
+                name: a.name,
+                contentType: a.contentType || 'application/octet-stream',
+                contentBytes: a.contentBytes,
+            }));
+        }
         await graphFetch('/me/sendMail', {
             method: 'POST',
-            body: JSON.stringify({
-                message: {
-                    subject,
-                    body: { contentType: 'HTML', content: body },
-                    toRecipients: [{ emailAddress: { address: to } }]
-                }
-            })
+            body: JSON.stringify({ message })
         });
     }
 

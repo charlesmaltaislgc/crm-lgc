@@ -431,46 +431,146 @@ Document généré par CRM LGC - Portes et Fenêtres.
         });
     }
 
-    async function sendSignEmail(contractId) {
+    // Contrat courant ouvert dans le modal d'envoi
+    let sendingContractId = null;
+    let selectedAttachmentId = null;
+
+    function sendSignEmail(contractId) {
         const contract = contracts.find(c => c.id === contractId);
-        if (!contract || !contract.clientEmail) {
-            App.showToast('Courriel du client manquant', 'error');
-            return;
+        if (!contract) return;
+
+        sendingContractId = contractId;
+        selectedAttachmentId = null;
+
+        const modal = document.getElementById('modal-send-contract');
+        if (!modal) return;
+
+        // Pré-remplir les champs
+        document.getElementById('send-contract-to').value = contract.clientEmail || '';
+        document.getElementById('send-contract-cc').value = Auth.getUser()?.email || '';
+        document.getElementById('send-contract-subject').value = `Contrat à signer — ${contract.clientName} — Portes et Fenêtres LGC`;
+        document.getElementById('send-contract-message').value =
+`Bonjour ${contract.clientName},
+
+Veuillez trouver ci-joint votre contrat pour signature.
+
+Description : ${contract.description}
+Montant : ${Deals.formatMoney(contract.amount)}
+
+Vous pouvez le signer et nous le retourner par courriel, ou nous contacter pour le signer en personne.
+
+Merci de votre confiance,
+Portes et Fenêtres LGC`;
+
+        document.getElementById('send-contract-preview').classList.add('hidden');
+
+        // Charger les fichiers du deal
+        const deal = Deals.getById(contract.dealId);
+        const filesEl = document.getElementById('send-contract-files');
+        const attachments = deal ? App.getAttachments(deal.id) : [];
+        const pdfs = attachments.filter(a => a.name && a.name.toLowerCase().endsWith('.pdf'));
+
+        if (pdfs.length === 0) {
+            filesEl.innerHTML = `<div class="contract-files-empty">
+                <p>Aucun PDF trouvé dans ce deal.</p>
+                <p style="font-size:12px;color:var(--text-muted)">Ouvrez le deal → onglet Fichiers → glissez le PDF du contrat Mec-inov.</p>
+            </div>`;
+        } else {
+            filesEl.innerHTML = pdfs.map(att => `
+                <label class="contract-file-option">
+                    <input type="radio" name="contract-attachment" value="${att.id}" onchange="Contracts.selectAttachment('${att.id}')">
+                    <span class="contract-file-label">
+                        <span>📄 ${att.name}</span>
+                        <span style="color:var(--text-muted);font-size:11px">${(att.size/1024).toFixed(0)} Ko — ${Deals.formatDate(att.uploadedAt)}</span>
+                    </span>
+                </label>
+            `).join('');
+            // Sélectionner le premier par défaut
+            if (pdfs.length === 1) {
+                filesEl.querySelector('input[type=radio]').checked = true;
+                selectedAttachmentId = pdfs[0].id;
+            }
         }
+
+        modal.classList.remove('hidden');
+    }
+
+    function selectAttachment(attId) {
+        selectedAttachmentId = attId;
+    }
+
+    function previewContractEmail() {
+        const message = document.getElementById('send-contract-message').value;
+        const to = document.getElementById('send-contract-to').value;
+        const subject = document.getElementById('send-contract-subject').value;
+        const previewEl = document.getElementById('send-contract-preview');
+        const previewBody = document.getElementById('send-contract-preview-body');
+
+        previewBody.innerHTML = buildEmailBody(message);
+        previewEl.classList.remove('hidden');
+    }
+
+    function buildEmailBody(message) {
+        const lines = message.split('\n').map(l => `<p style="margin:4px 0">${l || '&nbsp;'}</p>`).join('');
+        return `
+        <div style="font-family:system-ui;max-width:560px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+            <div style="background:#1a56db;color:white;padding:16px 20px;display:flex;align-items:center;gap:12px">
+                <strong style="font-size:16px">Portes et Fenêtres LGC</strong>
+            </div>
+            <div style="padding:20px;font-size:14px;color:#1e293b;line-height:1.6">
+                ${lines}
+                <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0">
+                <p style="font-size:11px;color:#94a3b8">Portes et Fenêtres LGC — Fabricant depuis 1994 — Saguenay, Québec</p>
+            </div>
+        </div>`;
+    }
+
+    async function doSendContractEmail() {
+        const to = document.getElementById('send-contract-to').value.trim();
+        const cc = document.getElementById('send-contract-cc').value.trim();
+        const subject = document.getElementById('send-contract-subject').value.trim();
+        const message = document.getElementById('send-contract-message').value.trim();
+
+        if (!to) { App.showToast('Courriel destinataire requis', 'error'); return; }
+        if (!subject) { App.showToast('Sujet requis', 'error'); return; }
+        if (!selectedAttachmentId) { App.showToast('Sélectionnez un fichier PDF à joindre', 'warning'); return; }
+
+        const contract = contracts.find(c => c.id === sendingContractId);
+        const deal = contract ? Deals.getById(contract.dealId) : null;
+        const attachments = deal ? App.getAttachments(deal.id) : [];
+        const att = attachments.find(a => a.id === selectedAttachmentId);
+
+        const btn = document.getElementById('btn-send-contract-email');
+        btn.disabled = true;
+        btn.textContent = '📤 Envoi...';
 
         if (Auth.isDemoMode()) {
-            App.showToast(`(Démo) Courriel envoyé à ${contract.clientEmail}`, 'info');
+            await new Promise(r => setTimeout(r, 800));
+            App.showToast(`(Démo) Courriel envoyé à ${to} avec ${att?.name || 'le contrat'} en PJ`, 'success');
+            document.getElementById('modal-send-contract').classList.add('hidden');
+            btn.disabled = false;
+            btn.textContent = '📤 Envoyer';
+            if (contract) App.addActivity('contract', `Contrat envoyé par courriel à ${to}`, contract.dealId);
             return;
         }
 
-        const body = `
-            <div style="font-family:system-ui;max-width:600px;margin:0 auto">
-                <div style="background:#1a56db;color:white;padding:20px;border-radius:8px 8px 0 0;text-align:center">
-                    <h2 style="margin:0">Portes et Fenêtres LGC</h2>
-                </div>
-                <div style="padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px">
-                    <p>Bonjour ${contract.clientName},</p>
-                    <p>Votre contrat est prêt à être signé électroniquement.</p>
-                    <p><strong>Description:</strong> ${contract.description}</p>
-                    <p><strong>Montant:</strong> ${Deals.formatMoney(contract.amount)}</p>
-                    <p style="text-align:center;margin:24px 0">
-                        <a href="${contract.signUrl}" style="background:#1a56db;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">
-                            Signer le contrat
-                        </a>
-                    </p>
-                    <p style="font-size:12px;color:#94a3b8">Si le bouton ne fonctionne pas, copiez ce lien: ${contract.signUrl}</p>
-                    <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
-                    <p>Merci de votre confiance,<br><strong>Portes et Fenêtres LGC</strong></p>
-                </div>
-            </div>
-        `;
-
         try {
-            await Graph.sendEmail(contract.clientEmail, `Contrat à signer - Portes et Fenêtres LGC`, body);
-            App.showToast('Courriel de signature envoyé!', 'success');
+            const body = buildEmailBody(message);
+            const emailAtt = att?.dataUrl ? [{
+                name: att.name,
+                contentType: 'application/pdf',
+                contentBytes: att.dataUrl.split(',')[1],
+            }] : [];
+            await Graph.sendEmail(to, subject, body, cc || null, emailAtt);
+            App.showToast('Courriel envoyé avec le contrat en PJ!', 'success');
+            document.getElementById('modal-send-contract').classList.add('hidden');
+            if (contract) App.addActivity('contract', `Contrat envoyé par courriel à ${to}`, contract.dealId);
         } catch (e) {
             App.showToast('Erreur: ' + e.message, 'error');
         }
+
+        btn.disabled = false;
+        btn.textContent = '📤 Envoyer';
     }
 
     function generateToken() {
@@ -497,5 +597,8 @@ Document généré par CRM LGC - Portes et Fenêtres.
         downloadProof,
         copySignLink,
         sendSignEmail,
+        selectAttachment,
+        previewContractEmail,
+        doSendContractEmail,
     };
 })();

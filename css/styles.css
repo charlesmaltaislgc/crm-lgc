@@ -2413,3 +2413,14 @@ a:hover { text-decoration: underline; }
     flex-wrap: wrap;
 }
 .install-client-summary.hidden { display: none; }
+
+/* ===== Send contract email modal ===== */
+.contract-files-list { display: flex; flex-direction: column; gap: 6px; }
+.contract-files-empty { padding: 12px; background: var(--warning-light); border-radius: 8px; font-size: 13px; color: var(--text-muted); }
+.contract-file-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 2px solid var(--border); border-radius: 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.contract-file-option:hover { border-color: var(--primary); background: var(--primary-light); }
+.contract-file-option input[type=radio]:checked + .contract-file-label { color: var(--primary); font-weight: 600; }
+.contract-file-option input[type=radio] { accent-color: var(--primary); width: 16px; height: 16px; flex-shrink: 0; }
+.contract-file-label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.contract-email-preview { margin-top: 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.preview-label { background: var(--bg); padding: 6px 12px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border); }

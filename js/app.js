@@ -1123,6 +1123,7 @@ const App = (() => {
         updateQuoteDeadlineAlert,
         getDeadlineStatus,
         openGoogleMaps,
+        getAttachments,
         get _editingDealId() { return editingDealId; },
     };
 })();

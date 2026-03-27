@@ -1051,6 +1051,50 @@
         </div>
     </div>
 
+    <!-- MODAL: Envoyer contrat par courriel -->
+    <div id="modal-send-contract" class="modal hidden">
+        <div class="modal-overlay" onclick="document.getElementById('modal-send-contract').classList.add('hidden')"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>📧 Envoyer le contrat par courriel</h3>
+                <button class="modal-close" onclick="document.getElementById('modal-send-contract').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>À (courriel client) *</label>
+                    <input type="email" id="send-contract-to" placeholder="client@exemple.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Copie (CC) <small style="color:var(--text-muted)">— optionnel</small></label>
+                    <input type="email" id="send-contract-cc" placeholder="direction@lgc.com">
+                </div>
+                <div class="form-group">
+                    <label>Sujet *</label>
+                    <input type="text" id="send-contract-subject" placeholder="Contrat - Portes et Fenêtres LGC">
+                </div>
+                <div class="form-group">
+                    <label>Pièce jointe — Choisir le fichier du deal *</label>
+                    <div id="send-contract-files" class="contract-files-list">
+                        <p style="color:var(--text-muted);font-size:13px">Aucun fichier disponible. Ajoutez le PDF dans l'onglet Fichiers du deal.</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Message personnalisé</label>
+                    <textarea id="send-contract-message" rows="5" style="font-size:13px"></textarea>
+                </div>
+                <div id="send-contract-preview" class="contract-email-preview hidden">
+                    <div class="preview-label">Aperçu du courriel</div>
+                    <div id="send-contract-preview-body"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-send-contract').classList.add('hidden')">Annuler</button>
+                <button type="button" class="btn btn-outline" onclick="Contracts.previewContractEmail()">👁️ Aperçu</button>
+                <button type="button" class="btn btn-primary" id="btn-send-contract-email" onclick="Contracts.doSendContractEmail()">📤 Envoyer</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast notifications -->
     <div id="toast-container" class="toast-container"></div>
 
