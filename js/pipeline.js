@@ -43,13 +43,22 @@ const Pipeline = (() => {
             col.className = 'kanban-column';
             col.dataset.stage = stage.id;
 
+            const stageValue = stageDeals.reduce((sum, d) => sum + (d.quoteAmount || 0), 0);
+            const hasOverdue = stageDeals.some(d => App.getDeadlineStatus(d)?.status === 'overdue');
+
             col.innerHTML = `
-                <div class="kanban-column-header">
-                    <span class="kanban-column-title">${stage.name}</span>
-                    <span class="kanban-column-count">${stageDeals.length}</span>
+                <div class="kanban-column-header" style="border-top: 3px solid ${stage.color}">
+                    <div>
+                        <span class="kanban-column-title">${stage.name}</span>
+                        ${hasOverdue ? '<span style="color:#ef4444;margin-left:4px" title="Deals en retard">🔴</span>' : ''}
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span class="kanban-column-count">${stageDeals.length}</span>
+                        ${stageValue > 0 ? `<span style="font-size:11px;color:var(--text-muted)">${Deals.formatMoney(stageValue)}</span>` : ''}
+                    </div>
                 </div>
                 <div class="kanban-column-body" data-stage="${stage.id}">
-                    ${stageDeals.map(deal => renderCard(deal)).join('')}
+                    ${stageDeals.length === 0 ? '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">Aucun deal</div>' : stageDeals.map(deal => renderCard(deal)).join('')}
                 </div>
             `;
 

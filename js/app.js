@@ -277,8 +277,16 @@ const App = (() => {
         // Set defaults
         const today = new Date();
         form.querySelector('[name="leadDate"]').value = today.toISOString().split('T')[0];
+        form.querySelector('[name="assignDate"]').value = today.toISOString().split('T')[0];
         form.querySelector('[name="stage"]').value = '1';
         form.querySelector('[name="clientType"]').value = 'regulier';
+
+        // Auto-assigner au vendeur connecté
+        const user = Auth.getUser();
+        if (user) {
+            const vendorSelect = form.querySelector('[name="assignedTo"]');
+            if (vendorSelect) vendorSelect.value = user.id;
+        }
 
         // Règle LGC: soumission max 48h après création du lead
         const deadline48h = new Date(today);
@@ -320,7 +328,9 @@ const App = (() => {
 
         for (const [key, value] of formData.entries()) {
             if (key === 'newNote') continue;
-            if (key === 'stage' || key === 'quoteAmount' || key === 'contractAmount' || key === 'depositRequired') {
+            if (key === 'stage') {
+                data[key] = parseInt(value, 10) || 1;
+            } else if (key === 'quoteAmount' || key === 'contractAmount' || key === 'depositRequired') {
                 data[key] = value ? parseFloat(value) : 0;
             } else {
                 data[key] = value;
@@ -356,17 +366,24 @@ const App = (() => {
         }
 
         // Animation succès
+        const wasNew = !editingDealId;
         saveBtn.classList.add('saved');
         saveBtn.innerHTML = '✅ Sauvegardé!';
-        showToast(editingDealId ? 'Deal mis à jour 🎯' : 'Nouveau deal créé! 🚀', 'success');
+        showToast(wasNew ? 'Nouveau deal créé! 🚀' : 'Deal mis à jour 🎯', 'success');
 
         setTimeout(() => {
             saveBtn.classList.remove('saving', 'saved');
             saveBtn.innerHTML = '🚀 Envoyer';
             closeDealModal();
-            renderCurrentView();
+
+            // Après création d'un nouveau deal → aller au pipeline pour le voir
+            if (wasNew) {
+                navigate('pipeline');
+            } else {
+                renderCurrentView();
+            }
             Alerts.refresh();
-        }, 800);
+        }, 600);
     }
 
     async function markDealLost() {

@@ -112,7 +112,7 @@
                         <input type="text" id="global-search" placeholder="Rechercher client, téléphone, deal..." autocomplete="off">
                         <span class="search-icon">🔍</span>
                     </div>
-                    <button id="btn-new-deal" class="btn btn-primary">+ Nouveau deal</button>
+                    <button id="btn-new-deal" class="btn btn-primary btn-save-animated">🚀 Nouveau deal</button>
                     <button id="btn-notifications" class="btn btn-icon" title="Notifications">
                         🔔
                         <span class="notif-dot hidden" id="notif-dot"></span>
@@ -436,6 +436,11 @@
                                     </select>
                                 </div>
                             </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>⚠️ Données démo</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Réinitialiser les données de démonstration. Attention: toutes les données locales seront effacées.</p>
+                            <button id="btn-reset-demo" class="btn btn-sm btn-danger" onclick="if(confirm('Effacer TOUTES les données démo et recommencer?')){localStorage.removeItem('crm_deals');localStorage.removeItem('crm_notes');localStorage.removeItem('crm_attachments');localStorage.removeItem('crm_activity');location.reload();}">🗑️ Réinitialiser les données</button>
                         </div>
                         <div class="settings-section">
                             <h3>Azure AD / M365</h3>
