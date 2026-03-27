@@ -97,6 +97,7 @@ const App = (() => {
             payments: 'Paiements',
             team: 'Équipe',
             reports: 'Rapports',
+            installations: 'Installations',
             plans: 'Lecteur de plans IA',
             settings: 'Paramètres',
         };
@@ -130,6 +131,9 @@ const App = (() => {
                 break;
             case 'reports':
                 Reports.render('month');
+                break;
+            case 'installations':
+                Installations.render();
                 break;
             case 'plans':
                 PlanReader.renderUI();

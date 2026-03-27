@@ -80,6 +80,10 @@
                     <span class="nav-text">Paiements</span>
                     <span class="badge badge-warning hidden" id="badge-payments">0</span>
                 </a></li>
+                <li><a href="#" data-view="installations" class="nav-link">
+                    <span class="nav-icon">🏗️</span>
+                    <span class="nav-text">Installations</span>
+                </a></li>
                 <li><a href="#" data-view="plans" class="nav-link">
                     <span class="nav-icon">📐</span>
                     <span class="nav-text">Lecteur de plans IA</span>
@@ -338,6 +342,13 @@
                     </div>
                     <div class="reports-grid" id="reports-grid">
                         <!-- Populated by reports.js -->
+                    </div>
+                </section>
+
+                <!-- INSTALLATIONS VIEW -->
+                <section id="view-installations" class="view">
+                    <div id="installations-content">
+                        <!-- Populated by installations.js -->
                     </div>
                 </section>
 
@@ -819,6 +830,80 @@
         </div>
     </div>
 
+    <!-- MODAL: Installation -->
+    <div id="modal-installation" class="modal hidden">
+        <div class="modal-overlay" onclick="document.getElementById('modal-installation').classList.add('hidden')"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3 id="modal-install-title">Planifier une installation</h3>
+                <button class="modal-close" onclick="document.getElementById('modal-installation').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="install-form">
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label>Client *</label>
+                            <input type="text" id="install-client" placeholder="Nom du client" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Adresse</label>
+                            <input type="text" id="install-address" placeholder="Adresse d'installation">
+                        </div>
+                        <div class="form-group">
+                            <label>Équipe *</label>
+                            <select id="install-team" required>
+                                <option value="">— Choisir —</option>
+                                <option value="equipe-1">🔵 Équipe 1</option>
+                                <option value="equipe-2">🟢 Équipe 2</option>
+                                <option value="equipe-3">🟡 Équipe 3</option>
+                                <option value="equipe-4">🔴 Équipe 4</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Date *</label>
+                            <input type="date" id="install-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Produits</label>
+                            <input type="text" id="install-products" placeholder="Portes, Fenêtres, etc.">
+                        </div>
+                        <div class="form-group">
+                            <label>Heures estimées</label>
+                            <input type="number" id="install-hours" min="1" max="24" placeholder="Ex: 6">
+                        </div>
+                        <div class="form-group">
+                            <label>Statut</label>
+                            <select id="install-status">
+                                <option value="scheduled">📅 Planifié</option>
+                                <option value="in-progress">🔨 En cours</option>
+                                <option value="completed">✅ Complété</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Deal lié</label>
+                            <select id="install-deal">
+                                <option value="">— Aucun —</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Notes</label>
+                        <textarea id="install-notes" rows="2" placeholder="Notes pour l'équipe..."></textarea>
+                    </div>
+                </form>
+
+                <div id="install-photos-section" style="margin-top:16px">
+                    <!-- Photos before/after rendered here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger hidden" id="btn-delete-install" onclick="Installations.deleteInstallation()">🗑️ Supprimer</button>
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-installation').classList.add('hidden')">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="Installations.saveInstallation()">💾 Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast notifications -->
     <div id="toast-container" class="toast-container"></div>
 
@@ -837,6 +922,7 @@
     <script src="js/plan-reader.js"></script>
     <script src="js/notifications.js"></script>
     <script src="js/calendar.js"></script>
+    <script src="js/installations.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
