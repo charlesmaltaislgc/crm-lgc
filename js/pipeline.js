@@ -64,17 +64,27 @@ const Pipeline = (() => {
         const delay = Deals.getLeadToQuoteDelay(deal);
         const daysSinceUpdate = Deals.getDaysSince(deal.updatedAt);
         const overdue = Deals.isOverdue(deal);
+        const deadline = App.getDeadlineStatus(deal);
         const team = Auth.getTeamMembers();
         const vendor = team.find(t => t.id === deal.assignedTo);
         const vendorInitials = vendor ? vendor.initials : '?';
         const vendorName = vendor ? vendor.name.split(' ')[0] : 'Non assigné';
 
+        let cardClass = 'kanban-card';
+        if (deadline?.status === 'overdue') cardClass += ' overdue';
+        else if (deadline?.status === 'due-soon') cardClass += ' due-soon';
+        else if (overdue) cardClass += ' overdue';
+
         return `
-            <div class="kanban-card ${overdue ? 'overdue' : ''}"
+            <div class="${cardClass}"
                  draggable="true"
                  data-deal-id="${deal.id}"
                  onclick="App.openDeal('${deal.id}')">
-                <div class="card-client">${deal.clientName}</div>
+                <div class="card-client">
+                    ${deal.clientName}
+                    ${deadline?.status === 'overdue' ? `<span class="overdue-badge">🚨 ${deadline.label}</span>` : ''}
+                    ${deadline?.status === 'due-soon' ? `<span class="due-soon-badge">⚠️ ${deadline.label}</span>` : ''}
+                </div>
                 <div class="card-products">
                     <span class="card-type-badge ${deal.clientType}">${deal.clientType === 'entrepreneur' ? 'ENTR' : 'RÉG'}</span>
                     ${deal.products === 'les-deux' ? 'Portes + Fenêtres' : deal.products === 'fenetres' ? 'Fenêtres' : deal.products === 'portes' ? 'Portes' : deal.products || ''}
@@ -86,7 +96,7 @@ const Pipeline = (() => {
                         ${vendorName}
                     </span>
                     ${delay !== null ? `<span class="card-delay">${delay}j lead→soum.</span>` : ''}
-                    ${overdue ? `<span class="card-delay">${daysSinceUpdate}j sans action</span>` : ''}
+                    ${overdue && !deadline ? `<span class="card-delay">${daysSinceUpdate}j sans action</span>` : ''}
                 </div>
             </div>
         `;

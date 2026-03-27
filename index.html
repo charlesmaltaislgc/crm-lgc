@@ -649,12 +649,24 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Date soumission envoyée</label>
-                                <input type="date" name="quoteSentDate">
+                                <label>Date soumission souhaitée ⏰</label>
+                                <input type="date" name="quoteDueDate" id="quote-due-date">
                             </div>
+                            <div class="form-group">
+                                <label>Date soumission envoyée</label>
+                                <input type="date" name="quoteSentDate" id="quote-sent-date">
+                            </div>
+                        </div>
+                        <!-- Alerte visuelle retard soumission -->
+                        <div id="quote-deadline-alert" class="deadline-alert hidden"></div>
+                        <div class="form-row">
                             <div class="form-group">
                                 <label>Date dernière relance</label>
                                 <input type="date" name="lastFollowUp">
+                            </div>
+                            <div class="form-group">
+                                <label>Date relance souhaitée ⏰</label>
+                                <input type="date" name="followUpDueDate">
                             </div>
                         </div>
                         <div class="form-row">

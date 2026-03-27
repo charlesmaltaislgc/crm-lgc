@@ -220,7 +220,8 @@ const App = (() => {
             'mecinovQuoteNum', 'mecinovOrderNum', 'mecinovInvoiceNum',
             'avantageInvoiceNum', 'shopifyOrderNum',
             'depositRequired', 'depositReceived', 'paymentStatus',
-            'leadDate', 'assignDate', 'quoteSentDate', 'lastFollowUp',
+            'leadDate', 'assignDate', 'quoteDueDate', 'quoteSentDate',
+            'lastFollowUp', 'followUpDueDate',
             'contractSignDate', 'depositDate', 'supplierOrderDate',
             'measurementDate', 'installDate', 'completedDate',
         ];
@@ -248,6 +249,9 @@ const App = (() => {
 
         // Delay indicator
         updateDelayIndicator();
+
+        // Quote deadline alert
+        updateQuoteDeadlineAlert();
 
         // Notes
         renderDealNotes(dealId);
@@ -759,6 +763,10 @@ const App = (() => {
         // Save deal
         document.getElementById('btn-save-deal').addEventListener('click', saveDeal);
 
+        // Quote deadline alert - live update when dates change
+        document.getElementById('quote-due-date')?.addEventListener('change', updateQuoteDeadlineAlert);
+        document.getElementById('quote-sent-date')?.addEventListener('change', updateQuoteDeadlineAlert);
+
         // Mark deal lost
         document.getElementById('btn-deal-lost').addEventListener('click', markDealLost);
 
@@ -941,6 +949,67 @@ const App = (() => {
         renderPendingAttachments();
     }
 
+    // ===== Quote Deadline Alert System =====
+    function updateQuoteDeadlineAlert() {
+        const alertEl = document.getElementById('quote-deadline-alert');
+        if (!alertEl) return;
+
+        const dueDate = document.getElementById('quote-due-date')?.value;
+        const sentDate = document.getElementById('quote-sent-date')?.value;
+
+        if (!dueDate) {
+            alertEl.classList.add('hidden');
+            return;
+        }
+
+        alertEl.classList.remove('hidden');
+        const due = new Date(dueDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+
+        if (sentDate) {
+            // Soumission déjà envoyée
+            const sent = new Date(sentDate);
+            sent.setHours(0, 0, 0, 0);
+            const diff = Math.round((sent - due) / (1000 * 60 * 60 * 24));
+            if (diff <= 0) {
+                alertEl.className = 'deadline-alert completed';
+                alertEl.innerHTML = `✅ Soumission envoyée à temps (${Math.abs(diff)} jour(s) d'avance)`;
+            } else {
+                alertEl.className = 'deadline-alert completed';
+                alertEl.innerHTML = `📨 Soumission envoyée (${diff} jour(s) après la date souhaitée)`;
+            }
+            return;
+        }
+
+        const daysLeft = Math.round((due - today) / (1000 * 60 * 60 * 24));
+
+        if (daysLeft < 0) {
+            alertEl.className = 'deadline-alert overdue';
+            alertEl.innerHTML = `🚨 EN RETARD de ${Math.abs(daysLeft)} jour(s) — soumission devait être envoyée le ${due.toLocaleDateString('fr-CA')}`;
+        } else if (daysLeft <= 2) {
+            alertEl.className = 'deadline-alert due-soon';
+            alertEl.innerHTML = `⚠️ Soumission due ${daysLeft === 0 ? "AUJOURD'HUI" : `dans ${daysLeft} jour(s)`}`;
+        } else {
+            alertEl.className = 'deadline-alert on-time';
+            alertEl.innerHTML = `✅ Soumission due dans ${daysLeft} jours (${due.toLocaleDateString('fr-CA')})`;
+        }
+    }
+
+    // Get deadline status for pipeline cards
+    function getDeadlineStatus(deal) {
+        if (!deal.quoteDueDate || deal.quoteSentDate) return null;
+        const due = new Date(deal.quoteDueDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+        const daysLeft = Math.round((due - today) / (1000 * 60 * 60 * 24));
+        if (daysLeft < 0) return { status: 'overdue', days: Math.abs(daysLeft), label: `${Math.abs(daysLeft)}j retard` };
+        if (daysLeft <= 2) return { status: 'due-soon', days: daysLeft, label: daysLeft === 0 ? "Aujourd'hui" : `${daysLeft}j restant` };
+        return null;
+    }
+
     return {
         init,
         navigate,
@@ -952,6 +1021,8 @@ const App = (() => {
         downloadAttachment,
         deleteAttachment,
         removePendingFile,
+        updateQuoteDeadlineAlert,
+        getDeadlineStatus,
         get _editingDealId() { return editingDealId; },
     };
 })();
