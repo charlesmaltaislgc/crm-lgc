@@ -379,7 +379,7 @@ const Contracts = (() => {
 <html><head><meta charset="utf-8"><title>Preuve de signature - ${contract.clientName}</title>
 <style>
 body{font-family:system-ui;max-width:700px;margin:40px auto;padding:20px;color:#1e293b}
-h1{font-size:22px;border-bottom:2px solid #1a56db;padding-bottom:8px}
+h1{font-size:22px;border-bottom:2px solid #c0392b;padding-bottom:8px}
 .info{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0;font-size:14px}
 .info strong{color:#64748b;font-size:12px;text-transform:uppercase}
 .sig-box{border:2px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center;margin:24px 0}
@@ -514,7 +514,7 @@ Portes et Fenêtres LGC`;
         const lines = message.split('\n').map(l => `<p style="margin:4px 0">${l || '&nbsp;'}</p>`).join('');
         return `
         <div style="font-family:system-ui;max-width:560px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
-            <div style="background:#1a56db;color:white;padding:16px 20px;display:flex;align-items:center;gap:12px">
+            <div style="background:#c0392b;color:white;padding:16px 20px;display:flex;align-items:center;gap:12px">
                 <strong style="font-size:16px">Portes et Fenêtres LGC</strong>
             </div>
             <div style="padding:20px;font-size:14px;color:#1e293b;line-height:1.6">

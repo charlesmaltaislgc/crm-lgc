@@ -106,6 +106,9 @@ const App = (() => {
     function navigate(view) {
         currentView = view;
 
+        // Close mobile sidebar when navigating
+        document.body.classList.remove('sidebar-open');
+
         // Update active nav link
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.toggle('active', link.dataset.view === view);
@@ -1112,7 +1115,7 @@ const App = (() => {
         canvas.height = window.innerHeight;
 
         const particles = [];
-        const colors = ['#ff0', '#f00', '#0f0', '#00f', '#f0f', '#0ff', '#ff8c00', '#22c55e', '#1a56db'];
+        const colors = ['#ff0', '#f00', '#0f0', '#c0392b', '#f0f', '#0ff', '#ff8c00', '#22c55e', '#a93226'];
         for (let i = 0; i < 150; i++) {
             particles.push({
                 x: Math.random() * canvas.width,
