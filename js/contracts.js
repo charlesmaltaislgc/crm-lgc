@@ -103,6 +103,7 @@ const Contracts = (() => {
         }
 
         App.showToast('Contrat signé!', 'success');
+        App.showToast('Le deal peut maintenant être marqué comme GAGNÉ dans le pipeline', 'info');
         App.addActivity('contract', `Contrat signé par ${signerName} - ${contracts[idx].clientName}`, contracts[idx].dealId);
     }
 
@@ -133,7 +134,9 @@ const Contracts = (() => {
             return;
         }
 
-        container.innerHTML = filtered.map(contract => {
+        // Add create button before list
+        let headerHtml = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary" onclick="Contracts.openCreateContract()">+ Créer un contrat</button></div>';
+        container.innerHTML = headerHtml + filtered.map(contract => {
             const deal = Deals.getById(contract.dealId);
             return `
                 <div class="task-item" style="cursor:pointer">
@@ -582,6 +585,159 @@ Portes et Fenêtres LGC`;
         return token;
     }
 
+    // ===== CREATE CONTRACT MODAL =====
+    function openCreateContract() {
+        const allDeals = Deals.getAll().filter(d => d.status === 'active' && d.stage >= 5);
+
+        let modal = document.getElementById('modal-create-contract');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'modal-create-contract';
+            modal.className = 'modal';
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="document.getElementById('modal-create-contract').classList.add('hidden')"></div>
+            <div class="modal-content modal-lg" style="z-index:1;max-height:90vh;overflow-y:auto">
+                <div class="modal-header">
+                    <h3>📝 Créer un contrat</h3>
+                    <button class="modal-close" onclick="document.getElementById('modal-create-contract').classList.add('hidden')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Rechercher le client / deal *</label>
+                        <input type="text" id="contract-search-client" class="input-sm" style="width:100%" placeholder="🔍 Tapez le nom du client..." oninput="Contracts.filterContractDeals(this.value)">
+                        <div id="contract-deals-list" style="max-height:200px;overflow-y:auto;margin-top:8px">
+                            ${allDeals.slice(0, 10).map(d => `
+                                <div class="dir-card" style="margin-bottom:4px;cursor:pointer" onclick="Contracts.selectContractDeal('${d.id}')">
+                                    <div style="flex:1">
+                                        <div style="font-weight:600">${d.clientName}</div>
+                                        <div style="font-size:12px;color:var(--text-muted)">${Deals.getStageName(d.stage)} — ${Deals.formatMoney(d.quoteAmount || d.contractAmount || 0)}${d.mecinovQuoteNum ? ' — Mec-inov #' + d.mecinovQuoteNum : ''}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div id="contract-deal-details" class="hidden" style="margin-top:16px">
+                        <div style="background:var(--bg);padding:16px;border-radius:var(--radius);margin-bottom:16px">
+                            <h4 id="contract-deal-name" style="margin-bottom:8px"></h4>
+                            <div id="contract-deal-info" style="font-size:13px"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Éléments Mec-inov à inclure au contrat</label>
+                            <div id="contract-mecinov-items" style="font-size:13px">
+                                <p style="color:var(--text-muted)">Les éléments de la soumission Mec-inov seront listés ici</p>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Montant du contrat ($)</label>
+                            <input type="number" id="contract-amount" class="input-sm" style="width:200px">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Notes / Annexe au contrat</label>
+                            <textarea id="contract-annexe" rows="4" placeholder="Conditions particulières, modifications, éléments spéciaux..."></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Description</label>
+                            <input type="text" id="contract-description" class="input-sm" style="width:100%" placeholder="Ex: Remplacement 12 fenêtres + 2 portes">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" onclick="document.getElementById('modal-create-contract').classList.add('hidden')">Annuler</button>
+                    <button class="btn btn-primary" id="btn-create-contract-confirm" onclick="Contracts.confirmCreateContract()">📝 Créer le contrat</button>
+                </div>
+            </div>
+        `;
+        modal.classList.remove('hidden');
+    }
+
+    let _selectedContractDealId = null;
+
+    function filterContractDeals(search) {
+        const allDeals = Deals.getAll().filter(d => d.status === 'active' && d.stage >= 5);
+        const filtered = search
+            ? allDeals.filter(d => d.clientName?.toLowerCase().includes(search.toLowerCase()))
+            : allDeals.slice(0, 10);
+        const list = document.getElementById('contract-deals-list');
+        if (!list) return;
+        list.innerHTML = filtered.map(d => `
+            <div class="dir-card" style="margin-bottom:4px;cursor:pointer" onclick="Contracts.selectContractDeal('${d.id}')">
+                <div style="flex:1">
+                    <div style="font-weight:600">${d.clientName}</div>
+                    <div style="font-size:12px;color:var(--text-muted)">${Deals.getStageName(d.stage)} — ${Deals.formatMoney(d.quoteAmount || d.contractAmount || 0)}${d.mecinovQuoteNum ? ' — Mec-inov #' + d.mecinovQuoteNum : ''}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function selectContractDeal(dealId) {
+        const deal = Deals.getById(dealId);
+        if (!deal) return;
+        _selectedContractDealId = dealId;
+
+        document.getElementById('contract-deal-details')?.classList.remove('hidden');
+        document.getElementById('contract-deal-name').textContent = deal.clientName;
+        document.getElementById('contract-deal-info').innerHTML = `
+            <div>📧 ${deal.clientEmail || 'N/A'} | 📞 ${deal.clientPhone || 'N/A'}</div>
+            <div>📍 ${deal.clientAddress || 'N/A'}</div>
+            <div>Étape: ${Deals.getStageName(deal.stage)} | Vendeur: ${deal.assignedTo || 'N/A'}</div>
+            ${deal.mecinovQuoteNum ? `<div>📋 Soumission Mec-inov #${deal.mecinovQuoteNum}</div>` : ''}
+            ${deal.accountNumber ? `<div># Compte Avantage: ${deal.accountNumber}</div>` : ''}
+        `;
+        document.getElementById('contract-amount').value = deal.contractAmount || deal.quoteAmount || '';
+        document.getElementById('contract-description').value = `Contrat pour ${deal.products === 'les-deux' ? 'portes et fenêtres' : deal.products || 'travaux'} - ${deal.clientAddress || ''}`;
+
+        // Mec-inov items (from deal custom fields if available)
+        const itemsEl = document.getElementById('contract-mecinov-items');
+        if (deal.mecinovItems && deal.mecinovItems.length > 0) {
+            itemsEl.innerHTML = deal.mecinovItems.map((item, idx) => `
+                <label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+                    <input type="checkbox" class="contract-item-check" checked data-index="${idx}">
+                    <span>${item.description || item} ${item.qty ? '(x'+item.qty+')' : ''} ${item.price ? '— ' + Deals.formatMoney(item.price) : ''}</span>
+                </label>
+            `).join('');
+        } else {
+            itemsEl.innerHTML = `<div style="color:var(--text-muted);font-size:12px">
+                Aucun élément Mec-inov trouvé pour ce deal.<br>
+                Les éléments seront disponibles quand le # de soumission Mec-inov est renseigné dans le deal.
+            </div>`;
+        }
+    }
+
+    async function confirmCreateContract() {
+        if (!_selectedContractDealId) {
+            App.showToast('Sélectionnez un deal d\'abord', 'error');
+            return;
+        }
+
+        const deal = Deals.getById(_selectedContractDealId);
+        if (!deal) return;
+
+        // Update deal with contract amount and description if changed
+        const amount = parseFloat(document.getElementById('contract-amount')?.value) || 0;
+        const annexe = document.getElementById('contract-annexe')?.value || '';
+        const description = document.getElementById('contract-description')?.value || '';
+
+        if (amount) await Deals.update(_selectedContractDealId, { contractAmount: amount });
+
+        const contract = await createContract(_selectedContractDealId);
+        if (contract && annexe) {
+            contract.annexe = annexe;
+            contract.description = description;
+            saveLocal();
+        }
+
+        document.getElementById('modal-create-contract')?.classList.add('hidden');
+        render('pending');
+    }
+
     return {
         loadContracts,
         createContract,
@@ -600,5 +756,9 @@ Portes et Fenêtres LGC`;
         selectAttachment,
         previewContractEmail,
         doSendContractEmail,
+        openCreateContract,
+        filterContractDeals,
+        selectContractDeal,
+        confirmCreateContract,
     };
 })();

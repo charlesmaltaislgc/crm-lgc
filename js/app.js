@@ -1098,7 +1098,14 @@ const App = (() => {
         }
 
         if (Auth.isDemoMode()) {
-            showToast('Envoi de courriel non disponible en mode démo', 'warning');
+            // Demo: simulate send
+            const dealId = document.getElementById('modal-email-compose')?.dataset.dealId;
+            if (dealId) {
+                addActivity('Courriel envoyé', `À: ${to} — ${subject}`, dealId);
+                await Deals.addNote(dealId, '📧 Courriel envoyé à ' + to + ': ' + subject, { type: 'email', icon: '📧' });
+            }
+            document.getElementById('modal-email-compose')?.classList.add('hidden');
+            showToast('Courriel simulé (mode démo)', 'success');
             return;
         }
 
@@ -1752,16 +1759,22 @@ const App = (() => {
             sendBtn.textContent = '⏳ Envoi...';
 
             try {
-                if (!Auth.isDemoMode()) {
+                if (Auth.isDemoMode()) {
+                    // Demo: simulate send and log note
+                    addActivity('Courriel envoyé', `À: ${to} — ${subject}`, dealId);
+                    await Deals.addNote(dealId, '📧 Courriel envoyé à ' + to + ': ' + subject, { type: 'email', icon: '📧' });
+                    document.getElementById('modal-compose-email').classList.add('hidden');
+                    showToast('Courriel simulé (mode démo)', 'success');
+                } else {
                     // Build HTML body with signature
                     const sigUser = Auth.getUser();
                     const signature = getEmailSignature(sigUser?.name, sigUser?.email);
                     const htmlBody = body.replace(/\n/g, '<br>') + signature;
                     await Graph.sendEmail(to, subject, htmlBody);
+                    await Deals.addNote(dealId, '📧 Courriel envoyé à ' + to + ': ' + subject, { type: 'email', icon: '📧' });
+                    document.getElementById('modal-compose-email').classList.add('hidden');
+                    showToast('Courriel envoyé via Outlook!', 'success');
                 }
-                await Deals.addNote(dealId, '📧 Courriel envoyé à ' + to + ': ' + subject, { type: 'email', icon: '📧' });
-                document.getElementById('modal-compose-email').classList.add('hidden');
-                showToast(Auth.isDemoMode() ? 'Courriel enregistré (mode démo, pas envoyé)' : 'Courriel envoyé via Outlook!', 'success');
             } catch (e) {
                 showToast('Erreur envoi: ' + e.message, 'error');
             } finally {

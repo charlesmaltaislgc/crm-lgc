@@ -96,40 +96,71 @@ ${recentDeals.map(d => `  ${d.status === 'active' ? '🔄' : d.status === 'won' 
     function executeCommand(text) {
         const lower = text.toLowerCase();
 
-        // Create task
-        if (lower.includes('créer') && (lower.includes('tâche') || lower.includes('task'))) {
-            return { type: 'action', action: 'create_task', message: 'Je peux créer une tâche. Dites-moi: pour qui, la description, et la date limite.' };
+        // Send email to client
+        if ((lower.includes('envoie') || lower.includes('envoyer')) && (lower.includes('courriel') || lower.includes('email') || lower.includes('contrat'))) {
+            // Try to extract client name
+            const nameMatch = text.match(/(?:à|a)\s+(.+?)(?:\s*$|\s+le|\s+un)/i);
+            if (nameMatch) {
+                const clientName = nameMatch[1].trim();
+                const deals = Deals.getAll();
+                const match = deals.find(d => d.clientName.toLowerCase().includes(clientName.toLowerCase()));
+                if (match) {
+                    if (lower.includes('contrat')) {
+                        // Open contract creation
+                        App.navigate('contracts');
+                        setTimeout(() => {
+                            Contracts.openCreateContract();
+                            setTimeout(() => Contracts.selectContractDeal(match.id), 200);
+                        }, 300);
+                        return { type: 'action', message: `J'ouvre la création de contrat pour ${match.clientName}.` };
+                    } else {
+                        App.openEmailCompose(match.id);
+                        return { type: 'action', message: `J'ouvre le courriel pour ${match.clientName} (${match.clientEmail}).` };
+                    }
+                }
+                return { type: 'info', message: `Je n'ai pas trouvé de client "${clientName}". Vérifiez le nom dans le pipeline.` };
+            }
         }
 
         // Create SAV ticket
-        if (lower.includes('ticket') && (lower.includes('sav') || lower.includes('service') || lower.includes('problème') || lower.includes('plainte'))) {
-            return { type: 'action', action: 'create_sav', message: 'Naviguer vers la page SAV pour créer un ticket.' };
-        }
-
-        // Navigate
-        if (lower.includes('pipeline') || lower.includes('kanban')) {
-            App.navigate('pipeline');
-            return { type: 'navigate', message: 'Voici le pipeline.' };
-        }
-        if (lower.includes('tableau de bord') || lower.includes('dashboard')) {
-            App.navigate('dashboard');
-            return { type: 'navigate', message: 'Voici le tableau de bord.' };
-        }
-        if (lower.includes('installation')) {
-            App.navigate('installations');
-            return { type: 'navigate', message: 'Voici le calendrier des installations.' };
-        }
-        if (lower.includes('sav') || lower.includes('service après')) {
+        if (lower.includes('ticket') || lower.includes('sav') || lower.includes('service après') || lower.includes('problème')) {
+            if (lower.includes('créer') || lower.includes('ouvrir') || lower.includes('nouveau')) {
+                App.navigate('sav');
+                setTimeout(() => SAV.openNewTicket(), 300);
+                return { type: 'action', message: 'J\'ouvre la création de ticket SAV.' };
+            }
             App.navigate('sav');
             return { type: 'navigate', message: 'Voici la page SAV.' };
         }
-        if (lower.includes('répertoire') || lower.includes('contact') || lower.includes('annuaire')) {
-            App.navigate('directory');
-            return { type: 'navigate', message: 'Voici le répertoire des contacts.' };
+
+        // Create task
+        if ((lower.includes('créer') || lower.includes('ajouter')) && (lower.includes('tâche') || lower.includes('task'))) {
+            return { type: 'action', action: 'create_task', message: 'Je peux créer une tâche. Dites-moi: pour qui, la description, et la date limite.' };
         }
-        if (lower.includes('rapport')) {
-            App.navigate('reports');
-            return { type: 'navigate', message: 'Voici les rapports.' };
+
+        // Navigate
+        if (lower.includes('pipeline') || lower.includes('kanban')) { App.navigate('pipeline'); return { type: 'navigate', message: 'Voici le pipeline.' }; }
+        if (lower.includes('tableau de bord') || lower.includes('dashboard')) { App.navigate('dashboard'); return { type: 'navigate', message: 'Voici le tableau de bord.' }; }
+        if (lower.includes('installation')) { App.navigate('installations'); return { type: 'navigate', message: 'Voici le calendrier des installations.' }; }
+        if (lower.includes('répertoire') || lower.includes('contact') || lower.includes('annuaire')) { App.navigate('directory'); return { type: 'navigate', message: 'Voici le répertoire des contacts.' }; }
+        if (lower.includes('rapport')) { App.navigate('reports'); return { type: 'navigate', message: 'Voici les rapports.' }; }
+        if (lower.includes('contrat')) { App.navigate('contracts'); return { type: 'navigate', message: 'Voici les contrats.' }; }
+        if (lower.includes('courriel') || lower.includes('email') || lower.includes('lead')) { App.navigate('emails'); return { type: 'navigate', message: 'Voici les courriels / leads.' }; }
+        if (lower.includes('paiement')) { App.navigate('payments'); return { type: 'navigate', message: 'Voici les paiements.' }; }
+        if (lower.includes('client')) { App.navigate('clients'); return { type: 'navigate', message: 'Voici les clients.' }; }
+
+        // Open specific deal
+        if (lower.includes('ouvrir') || lower.includes('chercher') || lower.includes('trouver')) {
+            const nameMatch = text.match(/(?:ouvrir|chercher|trouver)\s+(.+)/i);
+            if (nameMatch) {
+                const search = nameMatch[1].trim().toLowerCase();
+                const deal = Deals.getAll().find(d => d.clientName.toLowerCase().includes(search));
+                if (deal) {
+                    App.openDeal(deal.id);
+                    return { type: 'action', message: `J'ouvre le deal de ${deal.clientName} — ${Deals.getStageName(deal.stage)}.` };
+                }
+                return { type: 'info', message: `Aucun deal trouvé pour "${nameMatch[1]}".` };
+            }
         }
 
         return null; // No command detected, use AI

@@ -452,6 +452,32 @@ const SAV = (() => {
         });
 
         modal.classList.remove('hidden');
+
+        // Client search autocomplete
+        const clientInput = modal.querySelector('#sav-client-name');
+        if (clientInput) {
+            clientInput.addEventListener('input', () => {
+                const q = clientInput.value.toLowerCase();
+                if (q.length < 2) { document.getElementById('sav-client-suggestions')?.remove(); return; }
+                const allDeals2 = Deals.getAll();
+                const matches = allDeals2.filter(d => d.clientName?.toLowerCase().includes(q) || d.clientEmail?.toLowerCase().includes(q) || d.clientPhone?.includes(q)).slice(0, 5);
+                let suggestions = document.getElementById('sav-client-suggestions');
+                if (!suggestions) {
+                    suggestions = document.createElement('div');
+                    suggestions.id = 'sav-client-suggestions';
+                    suggestions.style.cssText = 'position:absolute;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);max-height:200px;overflow-y:auto;z-index:10;width:100%;box-shadow:0 4px 12px rgba(0,0,0,.1)';
+                    clientInput.parentNode.style.position = 'relative';
+                    clientInput.parentNode.appendChild(suggestions);
+                }
+                suggestions.innerHTML = matches.map(d => `
+                    <div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)"
+                         onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''"
+                         onclick="document.getElementById('sav-client-name').value='${(d.clientName||'').replace(/'/g, "\\'")}';document.getElementById('sav-client-phone').value='${(d.clientPhone||'').replace(/'/g, "\\'")}';document.getElementById('sav-client-email').value='${(d.clientEmail||'').replace(/'/g, "\\'")}';document.getElementById('sav-client-address').value='${(d.clientAddress||'').replace(/'/g, "\\'")}';document.getElementById('sav-deal-id').value='${d.id}';document.getElementById('sav-client-suggestions')?.remove()">
+                        <strong>${d.clientName}</strong> <span style="color:var(--text-muted)">${d.clientPhone || ''} — ${Deals.getStageName(d.stage)}</span>
+                    </div>
+                `).join('') || '<div style="padding:8px 12px;font-size:12px;color:var(--text-muted)">Aucun client trouvé</div>';
+            });
+        }
     }
 
     function _selectType(el) {
@@ -580,6 +606,38 @@ const SAV = (() => {
                         <button class="btn btn-sm btn-outline" style="margin-top:6px" onclick="SAV.saveResolution('${ticketId}')">Sauvegarder la résolution</button>
                     </div>
 
+                    <!-- Estimation coût (non couvert) -->
+                    ${!ticket.coveredByLGC ? `
+                    <div class="form-group" style="margin-top:12px;padding:12px;background:var(--warning-light,#fff8e1);border-radius:var(--radius)">
+                        <label style="color:var(--warning,#f59e0b)">💰 Estimation coût (non couvert par garantie)</label>
+                        <div style="font-size:13px;margin-top:4px">
+                            Total estimé: <strong>${Deals.formatMoney((ticket.costParts || 0) + (ticket.costLabor || 0))}</strong>
+                            (Pièces: ${Deals.formatMoney(ticket.costParts || 0)} + Main-d'oeuvre: ${Deals.formatMoney(ticket.costLabor || 0)})
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <!-- Send email to client -->
+                    ${ticket.clientEmail ? `
+                    <div style="margin-top:12px">
+                        <button class="btn btn-sm btn-outline" onclick="SAV.sendTicketEmail('${ticketId}')">📧 Envoyer courriel au client</button>
+                    </div>
+                    ` : ''}
+
+                    <!-- Photos -->
+                    <div class="form-group" style="margin-top:12px">
+                        <label>Photos (${ticket.photos?.length || 0})</label>
+                        <div id="sav-photos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px">
+                            ${(ticket.photos || []).map((p, idx) => `
+                                <div style="position:relative">
+                                    <img src="${p.data}" style="width:100%;height:80px;object-fit:cover;border-radius:var(--radius);cursor:pointer" onclick="window.open('${p.data}')">
+                                    <button style="position:absolute;top:2px;right:2px;background:red;color:white;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:10px" onclick="SAV.removePhoto('${ticketId}',${idx})">✕</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <input type="file" id="sav-photo-input" accept="image/*" multiple style="margin-top:8px" onchange="SAV.handlePhotoUpload('${ticketId}', this.files)">
+                    </div>
+
                     <!-- Notes -->
                     <div class="form-group" style="margin-top:16px">
                         <label>Notes (${ticket.notes.length})</label>
@@ -635,6 +693,62 @@ const SAV = (() => {
         openTicket(ticketId); // Refresh
     }
 
+    function handlePhotoUpload(ticketId, files) {
+        const ticket = getById(ticketId);
+        if (!ticket) return;
+        if (!ticket.photos) ticket.photos = [];
+
+        Array.from(files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                // Compress
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const maxW = 800;
+                    const scale = Math.min(1, maxW / img.width);
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+                    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                    ticket.photos.push({
+                        data: canvas.toDataURL('image/jpeg', 0.7),
+                        name: file.name,
+                        date: new Date().toISOString(),
+                    });
+                    saveTickets();
+                    openTicket(ticketId); // refresh
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function removePhoto(ticketId, index) {
+        const ticket = getById(ticketId);
+        if (!ticket || !ticket.photos) return;
+        ticket.photos.splice(index, 1);
+        saveTickets();
+        openTicket(ticketId);
+    }
+
+    function sendTicketEmail(ticketId) {
+        const ticket = getById(ticketId);
+        if (!ticket || !ticket.clientEmail) {
+            App.showToast('Pas de courriel client pour ce ticket', 'warning');
+            return;
+        }
+        App.openEmailCompose(null, null);
+        setTimeout(() => {
+            const toEl = document.getElementById('email-compose-to');
+            const subEl = document.getElementById('email-compose-subject');
+            const bodyEl = document.getElementById('email-compose-body');
+            if (toEl) toEl.value = ticket.clientEmail;
+            if (subEl) subEl.value = `Suivi de votre demande ${ticket.id} — Portes et Fenêtres LGC`;
+            if (bodyEl) bodyEl.value = `Bonjour ${ticket.clientName},\n\nNous faisons suite à votre demande ${ticket.id} concernant: ${ticket.description}\n\nMerci de votre patience.`;
+        }, 100);
+    }
+
     return {
         render,
         loadTickets,
@@ -650,6 +764,9 @@ const SAV = (() => {
         getStats,
         getTickets,
         _selectType,
+        handlePhotoUpload,
+        removePhoto,
+        sendTicketEmail,
         PROBLEM_TYPES,
         STATUSES,
     };
