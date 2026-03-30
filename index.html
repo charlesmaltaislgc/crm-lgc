@@ -465,7 +465,33 @@
                             </div>
                         </div>
                         <div class="settings-section">
-                            <h3>📧 Modeles de courriels</h3>
+                            <h3>✉️ Signature courriel</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                                La signature est automatiquement ajoutée à chaque courriel envoyé depuis le CRM avec votre logo LGC.
+                            </p>
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label>Téléphone entreprise</label>
+                                    <input type="text" id="setting-sig-phone" class="input-sm" value="(418) 832-0330" placeholder="(418) 832-0330">
+                                </div>
+                                <div class="form-group">
+                                    <label>Adresse</label>
+                                    <input type="text" id="setting-sig-address" class="input-sm" value="1015, boul. Pierre-Bertrand, Québec, QC G1M 3K7">
+                                </div>
+                                <div class="form-group">
+                                    <label>Site web</label>
+                                    <input type="text" id="setting-sig-website" class="input-sm" value="www.pflgc.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>URL du logo (laisser vide pour logo LGC par défaut)</label>
+                                    <input type="text" id="setting-sig-logo" class="input-sm" placeholder="https://...logo.png">
+                                </div>
+                                <button id="btn-save-signature" class="btn btn-sm btn-primary">Sauvegarder la signature</button>
+                                <div id="sig-preview" style="margin-top:16px;padding:16px;background:white;border:1px solid var(--border);border-radius:var(--radius)"></div>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>📧 Modèles de courriels</h3>
                             <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
                                 5 modeles pre-configures. Variables disponibles: {clientName}, {amount}, {vendorName}, {companyPhone}
                             </p>
@@ -544,6 +570,37 @@
                 </section>
             </div>
         </main>
+    </div>
+
+    <!-- MODAL: Email Compose (used by openEmailCompose) -->
+    <div id="modal-email-compose" class="modal hidden">
+        <div class="modal-overlay" onclick="document.getElementById('modal-email-compose').classList.add('hidden')"></div>
+        <div class="modal-content modal-lg" style="z-index:1">
+            <div class="modal-header">
+                <h3>📧 Envoyer un courriel</h3>
+                <button class="modal-close" onclick="document.getElementById('modal-email-compose').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>À</label>
+                    <input type="email" id="email-compose-to" class="input-sm" style="width:100%" placeholder="client@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Objet</label>
+                    <input type="text" id="email-compose-subject" class="input-sm" style="width:100%">
+                </div>
+                <div class="form-group">
+                    <label>Message</label>
+                    <textarea id="email-compose-body" rows="10" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px"></textarea>
+                    <span style="font-size:11px;color:var(--text-muted)">La signature avec logo LGC sera ajoutée automatiquement</span>
+                </div>
+                <div id="email-compose-attachments"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="document.getElementById('modal-email-compose').classList.add('hidden')">Annuler</button>
+                <button class="btn btn-primary" id="btn-send-composed-email">📤 Envoyer</button>
+            </div>
+        </div>
     </div>
 
     <!-- MODAL: Deal Form -->

@@ -18,7 +18,24 @@ const EmailScanner = (() => {
         'facture', 'invoice', 'paiement', 'payment', 'reçu', 'receipt',
         'newsletter', 'unsubscribe', 'désabonner', 'promotion', 'publicité',
         'livraison', 'tracking', 'suivi colis', 'confirmation de commande',
-        'microsoft', 'office 365', 'teams', 'sharepoint',
+        'microsoft', 'office 365', 'teams', 'sharepoint', 'zoom', 'calendly',
+        'password reset', 'mot de passe', 'vérification', 'verification',
+        'abonnement', 'subscription', 'notification', 'rappel automatique',
+        'out of office', 'absence du bureau', 'automatique',
+    ];
+
+    // Senders to always ignore (automated, internal, system)
+    const EXCLUDE_SENDERS = [
+        'noreply', 'no-reply', 'no_reply', 'donotreply', 'do-not-reply',
+        'notifications@', 'notification@', 'alert@', 'alerts@',
+        'mailer-daemon', 'postmaster', 'support@microsoft',
+        'calendar-notification', 'sharepoint@', 'onmicrosoft.com',
+        'mec-inov', 'mecinov', 'quickbooks', 'intuit',
+    ];
+
+    // Internal company domains to skip (not leads)
+    const INTERNAL_DOMAINS = [
+        'pflgc.com', 'porteslgc.com', 'lgcportes.com',
     ];
 
     let detectedLeads = [];
@@ -127,32 +144,38 @@ const EmailScanner = (() => {
             }
 
             for (const email of emails) {
+                const fromEmail = (email.from?.emailAddress?.address || email.fromEmail || '').toLowerCase();
+                const fromName = email.from?.emailAddress?.name || email.fromName || 'Inconnu';
+
+                // === FILTER 1: Skip internal/system senders ===
+                if (isExcludedSender(fromEmail, fromName)) continue;
+
+                // === FILTER 2: Analyze content ===
                 const score = analyzeEmail(email);
-                if (score.confidence > 0) {
-                    const fromEmail = email.from?.emailAddress?.address || email.fromEmail || '';
-                    const fromName = email.from?.emailAddress?.name || email.fromName || 'Inconnu';
 
-                    // Check if client already exists
-                    const existingMatches = findExistingClient(fromEmail, fromName, score.phone);
-                    const bestMatch = existingMatches.length > 0 ? existingMatches[0] : null;
+                // === FILTER 3: Require minimum confidence of 2 (at least 2 keywords or strong signal) ===
+                if (score.confidence < 2) continue;
 
-                    detectedLeads.push({
-                        id: email.id || 'E' + Math.random().toString(36).substr(2, 9),
-                        from: fromName,
-                        fromEmail: fromEmail,
-                        subject: email.subject || '',
-                        preview: (email.bodyPreview || email.preview || '').substring(0, 200),
-                        date: email.receivedDateTime || email.date || new Date().toISOString(),
-                        confidence: score.confidence,
-                        matchedKeywords: score.keywords,
-                        phone: score.phone,
-                        // Client matching
-                        existingDeal: bestMatch ? bestMatch.deal : null,
-                        matchReason: bestMatch ? bestMatch.reason : null,
-                        matchScore: bestMatch ? bestMatch.score : 0,
-                        allMatches: existingMatches,
-                    });
-                }
+                // Check if client already exists
+                const existingMatches = findExistingClient(fromEmail, fromName, score.phone);
+                const bestMatch = existingMatches.length > 0 ? existingMatches[0] : null;
+
+                detectedLeads.push({
+                    id: email.id || 'E' + Math.random().toString(36).substr(2, 9),
+                    from: fromName,
+                    fromEmail: fromEmail,
+                    subject: email.subject || '',
+                    preview: (email.bodyPreview || email.preview || '').substring(0, 200),
+                    date: email.receivedDateTime || email.date || new Date().toISOString(),
+                    confidence: score.confidence,
+                    matchedKeywords: score.keywords,
+                    phone: score.phone,
+                    // Client matching
+                    existingDeal: bestMatch ? bestMatch.deal : null,
+                    matchReason: bestMatch ? bestMatch.reason : null,
+                    matchScore: bestMatch ? bestMatch.score : 0,
+                    allMatches: existingMatches,
+                });
             }
 
             // Sort: existing clients first (they need attention), then by confidence
@@ -171,6 +194,34 @@ const EmailScanner = (() => {
         scanning = false;
         updateUI('results');
         updateBadge();
+    }
+
+    function isExcludedSender(email, name) {
+        if (!email) return true;
+        const emailLower = email.toLowerCase();
+        const nameLower = (name || '').toLowerCase();
+
+        // Check excluded sender patterns
+        for (const pattern of EXCLUDE_SENDERS) {
+            if (emailLower.includes(pattern) || nameLower.includes(pattern)) return true;
+        }
+
+        // Check internal company domains
+        const domain = emailLower.split('@')[1] || '';
+        for (const internalDomain of INTERNAL_DOMAINS) {
+            if (domain === internalDomain || domain.endsWith('.' + internalDomain)) return true;
+        }
+
+        // Skip common free email auto-senders (e.g. Google Calendar, PayPal, etc.)
+        const autoSenderDomains = [
+            'facebookmail.com', 'linkedin.com', 'twitter.com', 'x.com',
+            'paypal.com', 'shopify.com', 'wix.com', 'squarespace.com',
+            'canva.com', 'dropbox.com', 'google.com', 'apple.com',
+            'amazon.com', 'amazon.ca', 'ebay.com',
+        ];
+        if (autoSenderDomains.includes(domain)) return true;
+
+        return false;
     }
 
     function analyzeEmail(email) {
@@ -263,9 +314,11 @@ const EmailScanner = (() => {
         if (detectedLeads.length === 0) {
             container.innerHTML = `
                 <div class="email-placeholder">
-                    <p>Aucun lead potentiel détecté dans les courriels récents.</p>
+                    <p style="font-size:24px">✅</p>
+                    <p><strong>Aucun lead potentiel détecté</strong></p>
                     <p style="font-size:12px;margin-top:8px;color:var(--text-muted)">
-                        Les courriels des 7 derniers jours ont été analysés.
+                        Les courriels des 7 derniers jours ont été analysés et filtrés.<br>
+                        Courriels internes (@pflgc.com), notifications automatiques et messages sans lien avec des demandes de clients ont été exclus.
                     </p>
                 </div>
             `;

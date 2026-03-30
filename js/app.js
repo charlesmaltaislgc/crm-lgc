@@ -777,6 +777,46 @@ const App = (() => {
         const el8 = document.getElementById('setting-shopify-token');
         if (el7) el7.value = shopifyStore;
         if (el8) el8.value = shopifyToken;
+
+        // Email signature settings
+        loadSignatureSettings();
+    }
+
+    function loadSignatureSettings() {
+        const sig = JSON.parse(localStorage.getItem('crm_emailSignature') || '{}');
+        const elPhone = document.getElementById('setting-sig-phone');
+        const elAddr = document.getElementById('setting-sig-address');
+        const elWeb = document.getElementById('setting-sig-website');
+        const elLogo = document.getElementById('setting-sig-logo');
+        if (elPhone) elPhone.value = sig.phone || '(418) 832-0330';
+        if (elAddr) elAddr.value = sig.address || '1015, boul. Pierre-Bertrand, Québec, QC G1M 3K7';
+        if (elWeb) elWeb.value = sig.website || 'www.pflgc.com';
+        if (elLogo) elLogo.value = sig.logoUrl || '';
+
+        // Render preview
+        renderSignaturePreview();
+    }
+
+    function saveSignatureSettings() {
+        const sig = {
+            phone: document.getElementById('setting-sig-phone')?.value || '(418) 832-0330',
+            address: document.getElementById('setting-sig-address')?.value || '',
+            website: document.getElementById('setting-sig-website')?.value || 'www.pflgc.com',
+            logoUrl: document.getElementById('setting-sig-logo')?.value || '',
+        };
+        localStorage.setItem('crm_emailSignature', JSON.stringify(sig));
+        // Force refresh templates to remove old cached versions with inline signatures
+        localStorage.removeItem('crm_emailTemplates');
+        showToast('Signature sauvegardée!', 'success');
+        renderSignaturePreview();
+    }
+
+    function renderSignaturePreview() {
+        const preview = document.getElementById('sig-preview');
+        if (!preview) return;
+        const user = Auth.getUser();
+        const html = getEmailSignature(user?.name || 'Votre nom', user?.email || 'votre@pflgc.com');
+        preview.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;font-weight:700">APERÇU DE LA SIGNATURE:</div>' + html;
     }
 
     function saveSettings() {
@@ -995,21 +1035,13 @@ const App = (() => {
 
         if (template === 'soumission') {
             subject = `Soumission - Portes et Fenêtres LGC - ${deal?.clientName || ''}`;
-            body = `<p>Bonjour ${deal?.clientName || ''},</p>
-<p>Veuillez trouver ci-joint notre soumission pour votre projet.</p>
-<p>N'hésitez pas à nous contacter pour toute question.</p>
-<p>Cordialement,<br>${user?.name || ''}<br>Portes et Fenêtres LGC<br>418-XXX-XXXX</p>`;
+            body = `Bonjour ${deal?.clientName || ''},\n\nVeuillez trouver ci-joint notre soumission pour votre projet.\n\nN'hésitez pas à nous contacter pour toute question.`;
         } else if (template === 'relance') {
             subject = `Suivi de votre soumission - Portes et Fenêtres LGC`;
-            body = `<p>Bonjour ${deal?.clientName || ''},</p>
-<p>Je fais suite à la soumission que nous vous avons envoyée. Avez-vous eu le temps de la consulter?</p>
-<p>Je reste disponible pour en discuter ou apporter des modifications.</p>
-<p>Cordialement,<br>${user?.name || ''}<br>Portes et Fenêtres LGC</p>`;
+            body = `Bonjour ${deal?.clientName || ''},\n\nJe fais suite à la soumission que nous vous avons envoyée. Avez-vous eu le temps de la consulter?\n\nJe reste disponible pour en discuter ou apporter des modifications.`;
         } else if (template === 'contrat') {
             subject = `Contrat à signer - Portes et Fenêtres LGC - ${deal?.clientName || ''}`;
-            body = `<p>Bonjour ${deal?.clientName || ''},</p>
-<p>Veuillez trouver ci-joint votre contrat. Merci de le signer et nous le retourner.</p>
-<p>Cordialement,<br>${user?.name || ''}<br>Portes et Fenêtres LGC</p>`;
+            body = `Bonjour ${deal?.clientName || ''},\n\nVeuillez trouver ci-joint votre contrat. Merci de le signer et nous le retourner.`;
         }
 
         const modal = document.getElementById('modal-email-compose');
@@ -1041,7 +1073,7 @@ const App = (() => {
     async function sendComposedEmail() {
         const to = document.getElementById('email-compose-to')?.value;
         const subject = document.getElementById('email-compose-subject')?.value;
-        const body = document.getElementById('email-compose-body')?.value;
+        const bodyRaw = document.getElementById('email-compose-body')?.value;
 
         if (!to || !subject) {
             showToast('Remplir le destinataire et l\'objet', 'error');
@@ -1063,6 +1095,9 @@ const App = (() => {
             }
         }
 
+        const sendBtn = document.getElementById('btn-send-composed-email');
+        if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '⏳ Envoi...'; }
+
         try {
             // Collect checked attachments
             const attachments = [];
@@ -1075,17 +1110,25 @@ const App = (() => {
                 }
             });
 
-            await Graph.sendEmail(to, subject, body, null, attachments);
-            showToast('Courriel envoyé!', 'success');
+            // Build HTML body with signature
+            const user = Auth.getUser();
+            const signature = getEmailSignature(user?.name, user?.email);
+            const htmlBody = bodyRaw.replace(/\n/g, '<br>') + signature;
+
+            await Graph.sendEmail(to, subject, htmlBody, null, attachments);
+            showToast('Courriel envoyé avec signature!', 'success');
             document.getElementById('modal-email-compose')?.classList.add('hidden');
 
             // Log activity
             const dealId = document.getElementById('modal-email-compose')?.dataset.dealId;
             if (dealId) {
                 addActivity('Courriel envoyé', `À: ${to} — ${subject}`, dealId);
+                await Deals.addNote(dealId, '📧 Courriel envoyé à ' + to + ': ' + subject, { type: 'email', icon: '📧' });
             }
         } catch (e) {
             showToast('Erreur envoi: ' + e.message, 'error');
+        } finally {
+            if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '📤 Envoyer'; }
         }
     }
 
@@ -1500,37 +1543,64 @@ const App = (() => {
         return d;
     }
 
+    // ===== EMAIL SIGNATURE =====
+    const LOGO_URL = (window.location.origin + window.location.pathname).replace(/\/+$/, '') + '/assets/logo.png';
+
+    function getEmailSignature(vendorName, vendorEmail) {
+        const sigSettings = JSON.parse(localStorage.getItem('crm_emailSignature') || '{}');
+        const phone = sigSettings.phone || '(418) 832-0330';
+        const address = sigSettings.address || '1015, boul. Pierre-Bertrand, Québec, QC G1M 3K7';
+        const website = sigSettings.website || 'www.pflgc.com';
+        const logoUrl = sigSettings.logoUrl || LOGO_URL;
+
+        return `
+<table cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,sans-serif;font-size:13px;color:#333;margin-top:20px;border-top:2px solid #c0392b;padding-top:14px">
+  <tr>
+    <td style="padding-right:16px;vertical-align:top">
+      <img src="${logoUrl}" alt="Portes et Fenêtres LGC" style="width:120px;height:auto" />
+    </td>
+    <td style="vertical-align:top;line-height:1.5">
+      <strong style="font-size:14px;color:#c0392b">${vendorName || ''}</strong><br>
+      <span style="color:#666">${vendorEmail ? vendorEmail + '<br>' : ''}Portes et Fenêtres LGC</span><br>
+      <span style="color:#666">📞 ${phone}</span><br>
+      <span style="color:#666">📍 ${address}</span><br>
+      <a href="https://${website}" style="color:#c0392b;text-decoration:none">🌐 ${website}</a>
+    </td>
+  </tr>
+</table>`;
+    }
+
     // ===== EMAIL TEMPLATES =====
     const DEFAULT_TEMPLATES = [
         {
             id: 'tpl_soumission',
             name: 'Envoi de soumission',
-            subject: 'Votre soumission - Portes et Fenetres LGC',
-            body: 'Bonjour {clientName},\n\nVeuillez trouver ci-joint notre soumission pour un montant de {amount}.\n\nN\'hesitez pas a nous contacter pour toute question.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+            subject: 'Votre soumission - Portes et Fenêtres LGC',
+            body: 'Bonjour {clientName},\n\nVeuillez trouver ci-joint notre soumission pour un montant de {amount}.\n\nN\'hésitez pas à nous contacter pour toute question.',
         },
         {
             id: 'tpl_relance1',
             name: 'Relance #1 — Suivi soumission',
-            subject: 'Suivi de notre soumission - Portes et Fenetres LGC',
-            body: 'Bonjour {clientName},\n\nJe fais suite a la soumission que nous vous avons envoyee recemment pour un montant de {amount}.\n\nAvez-vous eu la chance de la consulter? Je suis disponible pour repondre a vos questions.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+            subject: 'Suivi de notre soumission - Portes et Fenêtres LGC',
+            body: 'Bonjour {clientName},\n\nJe fais suite à la soumission que nous vous avons envoyée récemment pour un montant de {amount}.\n\nAvez-vous eu la chance de la consulter? Je suis disponible pour répondre à vos questions.',
         },
         {
             id: 'tpl_relance2',
-            name: 'Relance #2 — Derniere chance',
-            subject: 'Derniere chance - Votre projet de portes et fenetres',
-            body: 'Bonjour {clientName},\n\nJe souhaitais vous relancer une derniere fois concernant votre projet.\n\nNotre soumission de {amount} reste valide pour une duree limitee. Si vous avez des questions ou souhaitez modifier le projet, n\'hesitez pas.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+            name: 'Relance #2 — Dernière chance',
+            subject: 'Dernière chance - Votre projet de portes et fenêtres',
+            body: 'Bonjour {clientName},\n\nJe souhaitais vous relancer une dernière fois concernant votre projet.\n\nNotre soumission de {amount} reste valide pour une durée limitée. Si vous avez des questions ou souhaitez modifier le projet, n\'hésitez pas.',
         },
         {
             id: 'tpl_rdv',
             name: 'Confirmation de RDV',
-            subject: 'Confirmation de votre rendez-vous - Portes et Fenetres LGC',
-            body: 'Bonjour {clientName},\n\nCeci est pour confirmer notre rendez-vous.\n\nN\'hesitez pas a me contacter si vous avez besoin de reporter.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+            subject: 'Confirmation de votre rendez-vous - Portes et Fenêtres LGC',
+            body: 'Bonjour {clientName},\n\nCeci est pour confirmer notre rendez-vous.\n\nN\'hésitez pas à me contacter si vous avez besoin de reporter.',
         },
         {
             id: 'tpl_acompte',
-            name: 'Acompte recu — Merci!',
-            subject: 'Confirmation de reception de votre acompte - LGC',
-            body: 'Bonjour {clientName},\n\nNous accusons reception de votre acompte. Merci!\n\nVotre commande est maintenant en cours de traitement. Nous vous tiendrons informe de la suite.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+            name: 'Acompte reçu — Merci!',
+            subject: 'Confirmation de réception de votre acompte - LGC',
+            body: 'Bonjour {clientName},\n\nNous accusons réception de votre acompte. Merci!\n\nVotre commande est maintenant en cours de traitement. Nous vous tiendrons informé de la suite.',
         },
     ];
 
@@ -1646,8 +1716,10 @@ const App = (() => {
 
             try {
                 if (!Auth.isDemoMode()) {
-                    // Send via Graph API
-                    const htmlBody = body.replace(/\n/g, '<br>');
+                    // Build HTML body with signature
+                    const sigUser = Auth.getUser();
+                    const signature = getEmailSignature(sigUser?.name, sigUser?.email);
+                    const htmlBody = body.replace(/\n/g, '<br>') + signature;
                     await Graph.sendEmail(to, subject, htmlBody);
                 }
                 await Deals.addNote(dealId, '📧 Courriel envoyé à ' + to + ': ' + subject, { type: 'email', icon: '📧' });
@@ -1892,6 +1964,9 @@ const App = (() => {
         // Settings: test M365 connections
         document.getElementById('btn-test-m365')?.addEventListener('click', testM365Connections);
 
+        // Settings: save email signature
+        document.getElementById('btn-save-signature')?.addEventListener('click', saveSignatureSettings);
+
         // Settings: Shopify
         document.getElementById('setting-shopify-store')?.addEventListener('change', (e) => {
             localStorage.setItem('crm_shopifyStore', e.target.value);
@@ -2070,6 +2145,7 @@ const App = (() => {
         openComposeEmail,
         openEmailCompose,
         sendComposedEmail,
+        getEmailSignature,
         addTeamMember,
         renderTeamSettings,
         testM365Connections,
