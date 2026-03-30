@@ -111,9 +111,34 @@ a:hover { text-decoration: underline; }
 .login-logo h1 { font-size: 28px; color: var(--text); margin-bottom: 4px; }
 .login-logo p { color: var(--text-secondary); font-size: 16px; }
 
-.login-hint { color: var(--text-muted); font-size: 12px; margin-top: 16px; }
+.login-hint { color: var(--text-muted); font-size: 13px; margin-top: 16px; line-height: 1.4; }
 
-#btn-demo { margin-top: 12px; }
+.login-separator {
+    display: flex;
+    align-items: center;
+    margin: 20px 0 16px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.login-separator::before, .login-separator::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border);
+}
+.login-separator span {
+    padding: 0 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#btn-demo { margin-top: 0; }
+
+.login-demo-hint {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 8px;
+    font-style: italic;
+}
 
 /* ===== App Layout ===== */
 .app {
@@ -1374,6 +1399,16 @@ a:hover { text-decoration: underline; }
 .btn-action-contract:hover {
     background: #fef3c7;
     border-color: #f59e0b;
+}
+
+.btn-email-deal {
+    background: #EBF5FF;
+    border-color: #3b82f6;
+    color: #1d4ed8;
+}
+.btn-email-deal:hover {
+    background: #DBEAFE;
+    border-color: #2563eb;
 }
 
 /* ===== Notes Timeline ===== */
@@ -3246,6 +3281,48 @@ input, select, textarea { font-size: 16px; }
     border-color: var(--primary);
     background: var(--primary);
     color: white;
+}
+
+/* ===== Install Team Config ===== */
+.install-team-config-row {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 8px;
+    background: white;
+}
+
+.install-team-config-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.install-team-config-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.install-team-config-members input {
+    margin-top: 4px;
+}
+
+.install-team-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.install-team-members {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
 }
 
 /* ===== Modal Medium ===== */

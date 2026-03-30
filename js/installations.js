@@ -5,13 +5,27 @@
 const Installations = (() => {
     const STORAGE_KEY = 'crm_installations';
     const PHOTOS_KEY = 'crm_install_photos';
-    // 4 équipes d'installation
-    const TEAMS = [
-        { id: 'equipe-1', name: 'Équipe 1', color: '#3b82f6', icon: '🔵' },
-        { id: 'equipe-2', name: 'Équipe 2', color: '#22c55e', icon: '🟢' },
-        { id: 'equipe-3', name: 'Équipe 3', color: '#f59e0b', icon: '🟡' },
-        { id: 'equipe-4', name: 'Équipe 4', color: '#ef4444', icon: '🔴' },
+    const TEAMS_KEY = 'crm_install_teams';
+
+    // Default teams — overridden by saved config
+    const DEFAULT_TEAMS = [
+        { id: 'equipe-1', name: 'Équipe 1', members: '', color: '#3b82f6', icon: '🔵' },
+        { id: 'equipe-2', name: 'Équipe 2', members: '', color: '#22c55e', icon: '🟢' },
+        { id: 'equipe-3', name: 'Équipe 3', members: '', color: '#f59e0b', icon: '🟡' },
+        { id: 'equipe-4', name: 'Équipe 4', members: '', color: '#ef4444', icon: '🔴' },
     ];
+
+    function getTeams() {
+        const saved = localStorage.getItem(TEAMS_KEY);
+        return saved ? JSON.parse(saved) : DEFAULT_TEAMS;
+    }
+
+    function saveTeams(teams) {
+        localStorage.setItem(TEAMS_KEY, JSON.stringify(teams));
+    }
+
+    // Backward compat: TEAMS as getter
+    let TEAMS = getTeams();
 
     let currentWeekStart = getMonday(new Date());
     let installations = [];
@@ -100,6 +114,7 @@ const Installations = (() => {
         const container = document.getElementById('installations-content');
         if (!container) return;
 
+        TEAMS = getTeams();
         loadData();
 
         container.innerHTML = `
@@ -160,8 +175,11 @@ const Installations = (() => {
     function renderTeamRow(team) {
         let html = `<div class="install-row">
             <div class="install-team-cell">
-                <span class="install-team-icon" style="background:${team.color}">${team.name.split(' ')[1]}</span>
-                <span class="install-team-name">${team.name}</span>
+                <span class="install-team-icon" style="background:${team.color}">${team.name.split(' ')[1] || team.name.charAt(0)}</span>
+                <div class="install-team-info">
+                    <span class="install-team-name">${team.name}</span>
+                    ${team.members ? `<span class="install-team-members">${team.members}</span>` : ''}
+                </div>
             </div>`;
 
         for (let i = 0; i < 5; i++) {
@@ -419,6 +437,7 @@ const Installations = (() => {
         const modal = document.getElementById('modal-installation');
         if (!modal) return;
 
+        updateTeamDropdown();
         modal.classList.remove('hidden');
         document.getElementById('modal-install-title').textContent = 'Planifier une installation';
 
@@ -445,6 +464,8 @@ const Installations = (() => {
         selectedInstallation = inst;
         const modal = document.getElementById('modal-installation');
         if (!modal) return;
+
+        updateTeamDropdown();
 
         modal.classList.remove('hidden');
         document.getElementById('modal-install-title').textContent = `Installation - ${inst.clientName}`;
@@ -713,6 +734,94 @@ const Installations = (() => {
         return alertList;
     }
 
+    // =========================================
+    // TEAM CONFIGURATION (Settings page)
+    // =========================================
+    function renderTeamConfig() {
+        const container = document.getElementById('install-teams-config');
+        if (!container) return;
+
+        const teams = getTeams();
+        const colors = [
+            { value: '#3b82f6', label: '🔵 Bleu' },
+            { value: '#22c55e', label: '🟢 Vert' },
+            { value: '#f59e0b', label: '🟡 Jaune' },
+            { value: '#ef4444', label: '🔴 Rouge' },
+            { value: '#8b5cf6', label: '🟣 Violet' },
+            { value: '#ec4899', label: '🩷 Rose' },
+        ];
+
+        container.innerHTML = teams.map((team, i) => `
+            <div class="install-team-config-row" data-idx="${i}">
+                <div class="install-team-config-header">
+                    <span class="install-team-config-dot" style="background:${team.color}"></span>
+                    <input type="text" class="input-sm team-cfg-name" value="${team.name}" placeholder="Nom de l'équipe" style="font-weight:600;flex:1">
+                    <select class="input-sm team-cfg-color" style="width:auto">
+                        ${colors.map(c => `<option value="${c.value}" ${team.color === c.value ? 'selected' : ''}>${c.label}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="install-team-config-members">
+                    <label style="font-size:12px;color:var(--text-muted)">Installateurs dans cette équipe:</label>
+                    <input type="text" class="input-sm team-cfg-members" value="${team.members || ''}" placeholder="Ex: Jean Tremblay, Marc Lavoie" style="width:100%">
+                </div>
+            </div>
+        `).join('') + `
+            <div style="display:flex;gap:8px;margin-top:12px">
+                <button class="btn btn-sm btn-primary" onclick="Installations.saveTeamConfig()">💾 Sauvegarder les équipes</button>
+                <button class="btn btn-sm btn-outline" onclick="Installations.addTeam()">+ Ajouter une équipe</button>
+            </div>
+        `;
+    }
+
+    function saveTeamConfig() {
+        const rows = document.querySelectorAll('.install-team-config-row');
+        const teams = [];
+        rows.forEach((row, i) => {
+            const name = row.querySelector('.team-cfg-name').value.trim();
+            const color = row.querySelector('.team-cfg-color').value;
+            const members = row.querySelector('.team-cfg-members').value.trim();
+            const existing = getTeams()[i];
+            teams.push({
+                id: existing?.id || 'equipe-' + (i + 1),
+                name: name || 'Équipe ' + (i + 1),
+                members: members,
+                color: color,
+                icon: { '#3b82f6': '🔵', '#22c55e': '🟢', '#f59e0b': '🟡', '#ef4444': '🔴', '#8b5cf6': '🟣', '#ec4899': '🩷' }[color] || '🔵',
+            });
+        });
+        saveTeams(teams);
+        TEAMS = teams;
+        App.showToast('Équipes d\'installation sauvegardées!', 'success');
+        renderTeamConfig();
+        // Update dropdown in install modal
+        updateTeamDropdown();
+    }
+
+    function addTeam() {
+        const teams = getTeams();
+        const n = teams.length + 1;
+        const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+        teams.push({
+            id: 'equipe-' + n,
+            name: 'Équipe ' + n,
+            members: '',
+            color: colors[(n - 1) % colors.length],
+            icon: '🔵',
+        });
+        saveTeams(teams);
+        renderTeamConfig();
+    }
+
+    function updateTeamDropdown() {
+        const select = document.getElementById('install-team');
+        if (!select) return;
+        const current = select.value;
+        const teams = getTeams();
+        select.innerHTML = '<option value="">— Choisir l\'équipe —</option>' +
+            teams.map(t => `<option value="${t.id}">${t.icon} ${t.name}${t.members ? ' (' + t.members + ')' : ''}</option>`).join('');
+        if (current) select.value = current;
+    }
+
     return {
         render,
         prevWeek,
@@ -729,5 +838,10 @@ const Installations = (() => {
         getMesureAlerts,
         onInstallDealChange,
         onMesureDealChange,
+        renderTeamConfig,
+        saveTeamConfig,
+        addTeam,
+        updateTeamDropdown,
+        getTeams,
     };
 })();

@@ -21,15 +21,16 @@
             <div class="login-logo">
                 <img src="assets/logo.png" alt="LGC Portes et Fenêtres" style="max-width:220px; margin-bottom:12px;">
                 <h1>CRM LGC</h1>
-                <p>Portes et Fenêtres</p>
+                <p>Gestion des ventes et installations</p>
             </div>
             <button id="btn-login" class="btn btn-primary btn-lg">
                 <svg width="20" height="20" viewBox="0 0 21 21" fill="currentColor"><path d="M0 0h10v10H0zM11 0h10v10H11zM0 11h10v10H0zM11 11h10v10H11z"/></svg>
-                Se connecter avec Microsoft 365
+                Connexion avec votre compte LGC
             </button>
-            <p class="login-hint">Utilisez votre compte M365 LGC</p>
-            <!-- Demo mode for testing without M365 -->
-            <button id="btn-demo" class="btn btn-outline btn-sm">Mode démo (sans M365)</button>
+            <p class="login-hint">Connectez-vous avec votre courriel @pflgc.com (Outlook / Microsoft 365)</p>
+            <div class="login-separator"><span>ou</span></div>
+            <button id="btn-demo" class="btn btn-outline btn-sm">Explorer en mode essai</button>
+            <p class="login-demo-hint">Mode essai = données fictives, pas de courriels ni de sauvegarde</p>
         </div>
     </div>
 
@@ -420,7 +421,19 @@
                             </div>
                         </div>
                         <div class="settings-section">
-                            <h3>Vendeurs / Équipe</h3>
+                            <h3>🏗️ Équipes d'installation</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                                Configurez vos équipes d'installation. Entrez les noms des installateurs pour chaque équipe.
+                            </p>
+                            <div id="install-teams-config">
+                                <!-- Populated by Installations.renderTeamConfig() -->
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>👥 Vendeurs / Équipe bureau</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                                Gérez les employés qui utilisent le CRM (vendeurs, directeurs, réception).
+                            </p>
                             <div id="team-settings" class="team-settings">
                                 <!-- Managed by team.js -->
                             </div>
@@ -791,7 +804,7 @@
                 </div>
                 <div class="modal-footer-right">
                     <button type="button" class="btn btn-outline" data-modal="modal-deal">✖ Annuler</button>
-                    <button type="button" class="btn btn-outline" onclick="App.openComposeEmail(App._editingDealId)">📧 Courriel</button>
+                    <button type="button" class="btn btn-outline btn-email-deal" onclick="App.openComposeEmail(App._editingDealId)">📧 Envoyer un courriel</button>
                     <button type="button" class="btn btn-outline btn-action-rdv" id="btn-deal-rdv" onclick="Calendar.showBookingModal(App._editingDealId)">📅 RDV</button>
                     <button type="button" class="btn btn-outline btn-action-contract" id="btn-deal-contract" onclick="Contracts.createContract(App._editingDealId)">✍️ Contrat</button>
                     <button type="button" class="btn btn-danger hidden" id="btn-deal-lost">💀 Perdu</button>
@@ -896,11 +909,8 @@
                         <div class="form-group">
                             <label>Équipe *</label>
                             <select id="install-team" required>
-                                <option value="">— Choisir —</option>
-                                <option value="equipe-1">🔵 Équipe 1</option>
-                                <option value="equipe-2">🟢 Équipe 2</option>
-                                <option value="equipe-3">🟡 Équipe 3</option>
-                                <option value="equipe-4">🔴 Équipe 4</option>
+                                <option value="">— Choisir l'équipe —</option>
+                                <!-- Populated dynamically by Installations.updateTeamDropdown() -->
                             </select>
                         </div>
                         <div class="form-group">

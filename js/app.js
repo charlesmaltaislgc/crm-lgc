@@ -737,6 +737,11 @@ const App = (() => {
         // Team members editor
         renderTeamSettings();
 
+        // Install teams config
+        if (typeof Installations !== 'undefined' && Installations.renderTeamConfig) {
+            Installations.renderTeamConfig();
+        }
+
         // Email templates list in settings
         showEmailTemplatesManager();
 
