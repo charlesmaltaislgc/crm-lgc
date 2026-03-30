@@ -10,21 +10,31 @@ const Calendar = (() => {
             return upcomingEvents;
         }
 
+        // Check if calendar is available (account might not have a mailbox)
+        const status = Graph.getServiceStatus();
+        if (status.calendar?.status === 'no-mailbox' || status.calendar?.status === 'error') {
+            console.warn('Calendar not available for this account');
+            upcomingEvents = generateDemoEvents(); // Fallback to demo
+            return upcomingEvents;
+        }
+
         try {
             const now = new Date().toISOString();
             const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString();
-            const data = await Graph.graphFetch(
-                `/me/calendarView?startDateTime=${now}&endDateTime=${nextWeek}&$orderby=start/dateTime&$top=20`
-            );
-            upcomingEvents = data?.value?.map(ev => ({
-                id: ev.id,
-                subject: ev.subject,
-                start: ev.start.dateTime,
-                end: ev.end.dateTime,
-                location: ev.location?.displayName || '',
-                attendees: ev.attendees?.map(a => a.emailAddress.name).join(', ') || '',
-                isOnline: ev.isOnlineMeeting || false,
-            })) || [];
+            const events = await Graph.getCalendarView(now, nextWeek, 20);
+            if (events && events.length > 0) {
+                upcomingEvents = events.map(ev => ({
+                    id: ev.id,
+                    subject: ev.subject,
+                    start: ev.start.dateTime,
+                    end: ev.end.dateTime,
+                    location: ev.location?.displayName || '',
+                    attendees: ev.attendees?.map(a => a.emailAddress.name).join(', ') || '',
+                    isOnline: ev.isOnlineMeeting || false,
+                }));
+            } else {
+                upcomingEvents = [];
+            }
         } catch (e) {
             console.warn('Failed to load calendar:', e);
             upcomingEvents = [];

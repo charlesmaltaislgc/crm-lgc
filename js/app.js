@@ -100,6 +100,20 @@ const App = (() => {
 
         // Show daily summary banner
         showDailyBanner(user);
+
+        // Auto-detect M365 services (background, don't block)
+        if (!Auth.isDemoMode()) {
+            Graph.detectServices().then(status => {
+                renderM365Status(status);
+                // If SharePoint detected and not configured, show hint
+                if (status.sharepoint?.status === 'detected' && status.sharepoint.recommended) {
+                    const spInput = document.getElementById('setting-sp-site');
+                    if (spInput && !spInput.value) {
+                        spInput.value = status.sharepoint.recommended;
+                    }
+                }
+            }).catch(() => {});
+        }
     }
 
     // ===== NAVIGATION =====
@@ -718,6 +732,17 @@ const App = (() => {
         if (el5) el5.value = tenantId;
         if (el6) el6.value = spSite;
 
+        // Shared mailbox
+        const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || '';
+        const el9 = document.getElementById('setting-shared-mailbox');
+        if (el9) el9.value = sharedMailbox;
+
+        // Show cached M365 status
+        try {
+            const cached = localStorage.getItem('crm_m365_status');
+            if (cached) renderM365Status(JSON.parse(cached));
+        } catch (e) { /* ignore */ }
+
         // AI settings
         const aiProvider = localStorage.getItem('crm_ai_provider') || 'anthropic';
         const aiApiKey = localStorage.getItem('crm_ai_apikey') || '';
@@ -761,6 +786,131 @@ const App = (() => {
         if (el1) localStorage.setItem('crm_relanceDelay', el1.value);
         if (el2) localStorage.setItem('crm_leadDelay', el2.value);
         if (el3) localStorage.setItem('crm_net30Delay', el3.value);
+    }
+
+    // ===== M365 CONNECTION TEST =====
+    async function testM365Connections() {
+        const btn = document.getElementById('btn-test-m365');
+        if (btn) btn.textContent = '⏳ Test en cours...';
+
+        if (Auth.isDemoMode()) {
+            renderM365Status({ sharepoint: 'no-auth', outlook: 'no-auth', calendar: 'no-auth' });
+            if (btn) btn.textContent = '🔄 Tester les connexions';
+            showToast('Connectez-vous avec M365 pour tester', 'warning');
+            return;
+        }
+
+        try {
+            const status = await Graph.detectServices();
+            renderM365Status(status);
+
+            // Auto-fill SharePoint site if detected
+            if (status.sharepoint?.status === 'detected' && status.sharepoint.recommended) {
+                const spInput = document.getElementById('setting-sp-site');
+                const sugDiv = document.getElementById('sp-site-suggestions');
+                if (spInput && !spInput.value) {
+                    spInput.value = status.sharepoint.recommended;
+                }
+                if (sugDiv && status.sharepoint.sites) {
+                    sugDiv.innerHTML = '<strong>Sites détectés:</strong> ' +
+                        status.sharepoint.sites.map(s =>
+                            `<a href="#" onclick="document.getElementById('setting-sp-site').value='${s.url}';return false;" style="color:var(--primary);text-decoration:underline;margin:0 4px">${s.name}</a>`
+                        ).join(' | ');
+                }
+            }
+
+            // Summary toast
+            const connected = [
+                status.sharepoint?.status === 'connected' ? 'SharePoint' : null,
+                status.outlook?.status === 'connected' || status.outlook?.status === 'shared' ? 'Outlook' : null,
+                status.calendar?.status === 'connected' ? 'Calendrier' : null,
+            ].filter(Boolean);
+            if (connected.length > 0) {
+                showToast(`Connecté: ${connected.join(', ')}`, 'success');
+            } else {
+                showToast('Aucun service M365 connecté — voir les détails', 'warning');
+            }
+        } catch (e) {
+            showToast('Erreur test M365: ' + e.message, 'error');
+        }
+
+        if (btn) btn.textContent = '🔄 Tester les connexions';
+    }
+
+    function renderM365Status(status) {
+        const labels = {
+            connected: 'Connecté',
+            shared: 'Boîte partagée',
+            detected: 'Détecté',
+            'not-configured': 'Non configuré',
+            'no-mailbox': 'Pas de boîte',
+            'no-auth': 'Non connecté',
+            error: 'Erreur',
+            unknown: 'Non testé',
+        };
+
+        const connectedState = (s) => {
+            if (!s || typeof s === 'string') return s || 'unknown';
+            return s.status || 'unknown';
+        };
+
+        const cardState = (s) => {
+            const st = connectedState(s);
+            if (st === 'connected') return 'true';
+            if (st === 'shared' || st === 'detected') return 'warning';
+            if (st === 'error' || st === 'no-mailbox') return 'error';
+            return '';
+        };
+
+        // SharePoint
+        const spCard = document.getElementById('m365-sp-status');
+        if (spCard) {
+            const st = connectedState(status.sharepoint);
+            spCard.dataset.connected = cardState(status.sharepoint);
+            spCard.querySelector('.m365-status-badge').dataset.status = st;
+            spCard.querySelector('.m365-status-badge').textContent = labels[st] || st;
+        }
+
+        // Outlook
+        const mailCard = document.getElementById('m365-mail-status');
+        if (mailCard) {
+            const st = connectedState(status.outlook);
+            mailCard.dataset.connected = cardState(status.outlook);
+            const badge = mailCard.querySelector('.m365-status-badge');
+            badge.dataset.status = st;
+            badge.textContent = labels[st] || st;
+            if (st === 'shared' && status.outlook?.mailbox) {
+                badge.textContent = `Via ${status.outlook.mailbox}`;
+            }
+        }
+
+        // Calendar
+        const calCard = document.getElementById('m365-cal-status');
+        if (calCard) {
+            const st = connectedState(status.calendar);
+            calCard.dataset.connected = cardState(status.calendar);
+            calCard.querySelector('.m365-status-badge').dataset.status = st;
+            calCard.querySelector('.m365-status-badge').textContent = labels[st] || st;
+        }
+
+        // Details
+        const details = document.getElementById('m365-status-details');
+        if (details) {
+            const msgs = [];
+            if (status.outlook?.status === 'no-mailbox') {
+                msgs.push('⚠️ Votre compte M365 n\'a pas de boîte Outlook. Configurez une boîte partagée ci-dessous (ex: soumission@pflgc.com).');
+            }
+            if (status.calendar?.status === 'no-mailbox') {
+                msgs.push('⚠️ Calendrier non disponible — lié à la boîte Outlook manquante. Utilisez un compte avec boîte mail.');
+            }
+            if (status.sharepoint?.status === 'detected') {
+                msgs.push('ℹ️ SharePoint détecté mais pas encore configuré. Cliquez sur un site suggéré et sauvegardez.');
+            }
+            if (status.sharepoint?.status === 'error') {
+                msgs.push('❌ SharePoint: ' + (status.sharepoint.message || 'erreur inconnue'));
+            }
+            details.innerHTML = msgs.map(m => `<p style="margin:4px 0">${m}</p>`).join('');
+        }
     }
 
     // ===== TEAM SETTINGS EDITOR =====
@@ -901,6 +1051,16 @@ const App = (() => {
         if (Auth.isDemoMode()) {
             showToast('Envoi de courriel non disponible en mode démo', 'warning');
             return;
+        }
+
+        // Check mailbox availability
+        const mailStatus = Graph.getServiceStatus().outlook;
+        if (mailStatus?.status === 'no-mailbox') {
+            const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || '';
+            if (!sharedMailbox) {
+                showToast('Votre compte n\'a pas de boîte Outlook. Configurez une boîte partagée dans Paramètres → M365.', 'warning');
+                return;
+            }
         }
 
         try {
@@ -1541,11 +1701,46 @@ const App = (() => {
     function setupEventListeners() {
         // Login buttons
         document.getElementById('btn-login').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-login');
+            btn.disabled = true;
+            btn.innerHTML = '<img src="https://learn.microsoft.com/en-us/entra/identity-platform/media/howto-add-branding-in-apps/ms-symbollockup_mssymbol_19.svg" style="height:16px;margin-right:8px"> Connexion en cours...';
             try {
                 const user = await Auth.login();
                 if (user) showApp(user);
             } catch (e) {
-                showToast('Connexion échouée. Vérifiez les paramètres Azure AD.', 'error');
+                const msg = e.message || '';
+                if (msg.startsWith('ADMIN_CONSENT_NEEDED|')) {
+                    // Show admin consent link
+                    const parts = msg.split('|');
+                    const tenantId = parts[1];
+                    const clientId = parts[2];
+                    const consentUrl = `https://login.microsoftonline.com/${tenantId}/adminconsent?client_id=${clientId}&redirect_uri=${encodeURIComponent(window.location.origin + window.location.pathname)}`;
+                    const loginHint = document.getElementById('login-hint');
+                    if (loginHint) {
+                        loginHint.innerHTML = `
+                            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin-top:16px;text-align:left;max-width:400px;margin-left:auto;margin-right:auto">
+                                <p style="margin:0 0 8px;font-weight:700;color:#856404">⚠️ Approbation administrateur requise</p>
+                                <p style="margin:0 0 12px;font-size:13px;color:#856404">
+                                    Un administrateur M365 doit approuver les permissions du CRM une seule fois.
+                                    Connectez-vous avec votre compte admin (charles.admin@pflgc.com).
+                                </p>
+                                <a href="${consentUrl}" class="btn btn-primary" style="display:inline-block;font-size:13px" target="_blank">
+                                    🔓 Approuver les permissions (admin)
+                                </a>
+                                <p style="margin:8px 0 0;font-size:11px;color:#856404">
+                                    Après approbation, revenez ici et reconnectez-vous.
+                                </p>
+                            </div>
+                        `;
+                    }
+                } else if (msg.includes('Session bloquée')) {
+                    showToast(msg, 'warning');
+                } else {
+                    showToast('Connexion échouée: ' + (msg || 'Vérifiez les paramètres Azure AD.'), 'error');
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<img src="https://learn.microsoft.com/en-us/entra/identity-platform/media/howto-add-branding-in-apps/ms-symbollockup_mssymbol_19.svg" style="height:16px;margin-right:8px"> Connexion avec votre compte LGC';
             }
         });
 
@@ -1688,8 +1883,14 @@ const App = (() => {
                 document.getElementById('setting-tenant-id').value,
                 document.getElementById('setting-sp-site').value
             );
-            showToast('Paramètres Azure AD sauvegardés. Rechargez la page pour appliquer.', 'success');
+            // Save shared mailbox
+            const sharedMailbox = document.getElementById('setting-shared-mailbox')?.value || '';
+            localStorage.setItem('crm_sharedMailbox', sharedMailbox);
+            showToast('Paramètres M365 sauvegardés. Rechargez la page pour appliquer.', 'success');
         });
+
+        // Settings: test M365 connections
+        document.getElementById('btn-test-m365')?.addEventListener('click', testM365Connections);
 
         // Settings: Shopify
         document.getElementById('setting-shopify-store')?.addEventListener('change', (e) => {
@@ -1716,6 +1917,14 @@ const App = (() => {
 
         // Team member add
         document.getElementById('btn-add-member')?.addEventListener('click', addTeamMember);
+
+        // Logout
+        document.getElementById('btn-logout')?.addEventListener('click', () => {
+            if (confirm('Se déconnecter du CRM?')) {
+                Auth.logout();
+                window.location.reload();
+            }
+        });
 
         // Email compose
         document.getElementById('btn-send-composed-email')?.addEventListener('click', sendComposedEmail);
@@ -1863,6 +2072,8 @@ const App = (() => {
         sendComposedEmail,
         addTeamMember,
         renderTeamSettings,
+        testM365Connections,
+        renderM365Status,
         triggerConfetti,
         showEmailTemplatesManager,
         get _editingDealId() { return editingDealId; },

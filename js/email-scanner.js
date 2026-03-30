@@ -100,11 +100,24 @@ const EmailScanner = (() => {
             } else {
                 const token = await Auth.getToken();
                 if (!token || token === 'demo-token') {
-                    App.showToast('Connexion M365 requise pour scanner les courriels. Connectez-vous avec Microsoft 365.', 'error');
+                    App.showToast('Connexion M365 requise pour scanner les courriels.', 'error');
                     scanning = false;
                     updateUI('no-auth');
                     return;
                 }
+
+                // Check service status - mailbox might not be available
+                const status = Graph.getServiceStatus();
+                if (status.outlook?.status === 'no-mailbox') {
+                    const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || '';
+                    if (!sharedMailbox) {
+                        App.showToast('Votre compte n\'a pas de boîte Outlook. Configurez une boîte partagée dans Paramètres → M365.', 'warning');
+                        scanning = false;
+                        updateUI('no-mailbox');
+                        return;
+                    }
+                }
+
                 const weekAgo = new Date();
                 weekAgo.setDate(weekAgo.getDate() - 7);
                 emails = await Graph.getEmails(50, `receivedDateTime ge ${weekAgo.toISOString()}`);
@@ -222,7 +235,25 @@ const EmailScanner = (() => {
                         En mode démo, des courriels fictifs sont utilisés.
                     </p>
                     <p style="font-size:12px;color:var(--text-muted);margin-top:12px">
-                        Allez dans ⚙️ Paramètres → Azure AD pour configurer la connexion.
+                        Allez dans ⚙️ Paramètres → M365 pour configurer la connexion.
+                    </p>
+                </div>
+            `;
+            return;
+        }
+
+        if (state === 'no-mailbox') {
+            container.innerHTML = `
+                <div class="email-placeholder">
+                    <p style="font-size:24px">📭</p>
+                    <p><strong>Boîte Outlook non disponible</strong></p>
+                    <p style="font-size:13px;color:var(--text-muted);margin-top:8px">
+                        Votre compte M365 (${Auth.getUser()?.email || ''}) n'a pas de boîte de courriel Outlook.<br>
+                        C'est normal pour les comptes administrateurs.
+                    </p>
+                    <p style="font-size:13px;color:var(--text-secondary);margin-top:8px">
+                        <strong>Solution:</strong> Allez dans ⚙️ Paramètres → Connexion M365 et entrez une <strong>boîte partagée</strong><br>
+                        (ex: soumission@pflgc.com ou charles.maltais@pflgc.com)
                     </p>
                 </div>
             `;

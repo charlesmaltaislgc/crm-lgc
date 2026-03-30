@@ -193,9 +193,122 @@ const Graph = (() => {
         return true;
     }
 
-    // Outlook emails
+    // ===== SERVICE DETECTION =====
+    // Test which M365 services are available for the logged-in account
+    let serviceStatus = { sharepoint: null, outlook: null, calendar: null };
+
+    async function detectServices() {
+        const token = await Auth.getToken();
+        if (!token || token === 'demo-token') {
+            serviceStatus = { sharepoint: 'no-auth', outlook: 'no-auth', calendar: 'no-auth' };
+            return serviceStatus;
+        }
+
+        // Test all three in parallel
+        const [sp, mail, cal] = await Promise.allSettled([
+            testSharePoint(),
+            testOutlook(),
+            testCalendar()
+        ]);
+
+        serviceStatus.sharepoint = sp.status === 'fulfilled' ? sp.value : 'error';
+        serviceStatus.outlook = mail.status === 'fulfilled' ? mail.value : 'error';
+        serviceStatus.calendar = cal.status === 'fulfilled' ? cal.value : 'error';
+
+        // Save status for other modules
+        localStorage.setItem('crm_m365_status', JSON.stringify(serviceStatus));
+        return serviceStatus;
+    }
+
+    async function testSharePoint() {
+        const spSite = localStorage.getItem('crm_spSite') || '';
+        if (!spSite) {
+            // Try to auto-detect SharePoint site
+            try {
+                const data = await graphFetch('/sites?search=LGC&$top=5');
+                if (data?.value?.length > 0) {
+                    // Find the best site (prefer SoumissionsCRM or LGC)
+                    const sites = data.value;
+                    const crmSite = sites.find(s => s.displayName?.includes('CRM') || s.name?.includes('CRM'));
+                    const lgcSite = sites.find(s => s.displayName?.includes('LGC') || s.name?.includes('LGC'));
+                    const bestSite = crmSite || lgcSite || sites[0];
+                    return { status: 'detected', sites: sites.map(s => ({ name: s.displayName, url: s.webUrl, id: s.id })), recommended: bestSite?.webUrl };
+                }
+            } catch (e) { /* continue */ }
+            return { status: 'not-configured' };
+        }
+        try {
+            const site = await getSiteId();
+            return site ? { status: 'connected', siteId: site } : { status: 'error', message: 'Site introuvable' };
+        } catch (e) {
+            return { status: 'error', message: e.message };
+        }
+    }
+
+    async function testOutlook() {
+        try {
+            // Test if the account has a mailbox
+            const data = await graphFetch('/me/messages?$top=1&$select=id');
+            return { status: 'connected', hasMailbox: true };
+        } catch (e) {
+            const msg = e.message || '';
+            if (msg.includes('MailboxNotEnabledForRESTAPI') || msg.includes('MailboxNotFound')) {
+                // Account has no mailbox - check for shared mailbox config
+                const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || '';
+                if (sharedMailbox) {
+                    try {
+                        await graphFetch(`/users/${sharedMailbox}/messages?$top=1&$select=id`);
+                        return { status: 'shared', mailbox: sharedMailbox };
+                    } catch (e2) {
+                        return { status: 'no-mailbox', sharedError: e2.message };
+                    }
+                }
+                return { status: 'no-mailbox' };
+            }
+            return { status: 'error', message: msg };
+        }
+    }
+
+    async function testCalendar() {
+        try {
+            const now = new Date().toISOString();
+            const tomorrow = new Date(Date.now() + 86400000).toISOString();
+            await graphFetch(`/me/calendarView?startDateTime=${now}&endDateTime=${tomorrow}&$top=1&$select=id`);
+            return { status: 'connected' };
+        } catch (e) {
+            const msg = e.message || '';
+            if (msg.includes('MailboxNotEnabledForRESTAPI') || msg.includes('MailboxNotFound')) {
+                return { status: 'no-mailbox' };
+            }
+            return { status: 'error', message: msg };
+        }
+    }
+
+    function getServiceStatus() {
+        if (serviceStatus.sharepoint === null) {
+            // Load cached status
+            try {
+                const cached = localStorage.getItem('crm_m365_status');
+                if (cached) serviceStatus = JSON.parse(cached);
+            } catch (e) { /* ignore */ }
+        }
+        return serviceStatus;
+    }
+
+    // ===== OUTLOOK EMAILS =====
+    // Supports both personal mailbox and shared mailbox
+    function getMailboxEndpoint() {
+        const status = getServiceStatus();
+        const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || '';
+        if (status.outlook?.status === 'shared' && sharedMailbox) {
+            return `/users/${sharedMailbox}`;
+        }
+        return '/me';
+    }
+
     async function getEmails(top = 50, filter = '') {
-        let url = `/me/messages?$top=${top}&$orderby=receivedDateTime desc`;
+        const endpoint = getMailboxEndpoint();
+        let url = `${endpoint}/messages?$top=${top}&$orderby=receivedDateTime desc`;
         if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
         const data = await graphFetch(url);
         return data?.value || [];
@@ -216,7 +329,9 @@ const Graph = (() => {
                 contentBytes: a.contentBytes,
             }));
         }
-        await graphFetch('/me/sendMail', {
+
+        const endpoint = getMailboxEndpoint();
+        await graphFetch(`${endpoint}/sendMail`, {
             method: 'POST',
             body: JSON.stringify({ message })
         });
@@ -239,6 +354,19 @@ const Graph = (() => {
         });
     }
 
+    // Calendar view
+    async function getCalendarView(start, end, top = 20) {
+        try {
+            const data = await graphFetch(
+                `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=${top}`
+            );
+            return data?.value || [];
+        } catch (e) {
+            console.warn('Calendar fetch failed:', e.message);
+            return [];
+        }
+    }
+
     return {
         ensureLists,
         getListItems,
@@ -248,6 +376,10 @@ const Graph = (() => {
         getEmails,
         sendEmail,
         createEvent,
-        graphFetch
+        getCalendarView,
+        graphFetch,
+        detectServices,
+        getServiceStatus,
+        getSiteId,
     };
 })();

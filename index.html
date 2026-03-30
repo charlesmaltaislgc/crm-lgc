@@ -27,7 +27,7 @@
                 <svg width="20" height="20" viewBox="0 0 21 21" fill="currentColor"><path d="M0 0h10v10H0zM11 0h10v10H11zM0 11h10v10H0zM11 11h10v10H11z"/></svg>
                 Connexion avec votre compte LGC
             </button>
-            <p class="login-hint">Connectez-vous avec votre courriel @pflgc.com (Outlook / Microsoft 365)</p>
+            <p class="login-hint" id="login-hint">Connectez-vous avec votre courriel @pflgc.com (Outlook / Microsoft 365)</p>
             <div class="login-separator"><span>ou</span></div>
             <button id="btn-demo" class="btn btn-outline btn-sm">Explorer en mode essai</button>
             <p class="login-demo-hint">Mode essai = données fictives, pas de courriels ni de sauvegarde</p>
@@ -51,6 +51,7 @@
                     <span class="user-name" id="user-name">Chargement...</span>
                     <span class="user-role" id="user-role">Vendeur</span>
                 </div>
+                <button id="btn-logout" class="btn-logout" title="Se déconnecter">⏻</button>
             </div>
 
             <ul class="sidebar-nav">
@@ -492,7 +493,31 @@
                             <button id="btn-reset-demo" class="btn btn-sm btn-danger" onclick="if(confirm('Effacer TOUTES les données démo et recommencer?')){localStorage.removeItem('crm_deals');localStorage.removeItem('crm_notes');localStorage.removeItem('crm_attachments');localStorage.removeItem('crm_activity');location.reload();}">🗑️ Réinitialiser les données</button>
                         </div>
                         <div class="settings-section">
-                            <h3>Azure AD / M365</h3>
+                            <h3>🔗 Connexion Microsoft 365</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                                État des connexions M365. Cliquez "Tester les connexions" pour vérifier.
+                            </p>
+                            <div id="m365-status-panel" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+                                <div class="m365-status-card" id="m365-sp-status">
+                                    <div class="m365-status-icon">📁</div>
+                                    <div class="m365-status-label">SharePoint</div>
+                                    <div class="m365-status-badge" data-status="unknown">Non testé</div>
+                                </div>
+                                <div class="m365-status-card" id="m365-mail-status">
+                                    <div class="m365-status-icon">📧</div>
+                                    <div class="m365-status-label">Outlook</div>
+                                    <div class="m365-status-badge" data-status="unknown">Non testé</div>
+                                </div>
+                                <div class="m365-status-card" id="m365-cal-status">
+                                    <div class="m365-status-icon">📅</div>
+                                    <div class="m365-status-label">Calendrier</div>
+                                    <div class="m365-status-badge" data-status="unknown">Non testé</div>
+                                </div>
+                            </div>
+                            <div id="m365-status-details" style="font-size:12px;color:var(--text-muted);margin-bottom:12px"></div>
+                            <button id="btn-test-m365" class="btn btn-sm btn-primary">🔄 Tester les connexions</button>
+                            <hr style="margin:16px 0;border-color:var(--border)">
+                            <h4 style="font-size:14px;margin-bottom:8px">Configuration avancée</h4>
                             <div class="settings-form">
                                 <div class="form-group">
                                     <label>Client ID (Application ID)</label>
@@ -504,7 +529,13 @@
                                 </div>
                                 <div class="form-group">
                                     <label>SharePoint Site URL</label>
-                                    <input type="text" id="setting-sp-site" class="input-sm" placeholder="https://porteslgc.sharepoint.com/sites/CRM">
+                                    <input type="text" id="setting-sp-site" class="input-sm" placeholder="https://porteslgc.sharepoint.com/sites/LGC">
+                                    <div id="sp-site-suggestions" style="font-size:11px;margin-top:4px"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Boîte courriel partagée (si votre compte n'a pas de boîte)</label>
+                                    <input type="email" id="setting-shared-mailbox" class="input-sm" placeholder="soumission@pflgc.com">
+                                    <span style="font-size:11px;color:var(--text-muted)">Utilisé si le compte M365 connecté n'a pas de boîte Outlook (ex: compte admin)</span>
                                 </div>
                                 <button id="btn-save-azure" class="btn btn-sm btn-primary">Sauvegarder</button>
                             </div>

@@ -82,6 +82,36 @@ const Auth = (() => {
             return currentUser;
         } catch (e) {
             console.error('Login failed:', e);
+
+            // Handle stuck interaction state
+            if (e.errorCode === 'interaction_in_progress') {
+                // Clear stuck state and retry once
+                const accounts = msalInstance.getAllAccounts();
+                if (accounts.length > 0) {
+                    // Already logged in from a previous session
+                    msalInstance.setActiveAccount(accounts[0]);
+                    return await silentLogin();
+                }
+                // Clear browser interaction state
+                sessionStorage.removeItem('msal.interaction.status');
+                // Clear all MSAL interaction keys
+                for (const key of Object.keys(sessionStorage)) {
+                    if (key.includes('msal') && key.includes('interaction')) {
+                        sessionStorage.removeItem(key);
+                    }
+                }
+                throw new Error('Session bloquée. Cliquez à nouveau sur Connexion.');
+            }
+
+            // Handle admin consent required
+            if (e.errorCode === 'consent_required' || e.errorCode === 'interaction_required' ||
+                (e.message && (e.message.includes('AADSTS65001') || e.message.includes('AADSTS650052') ||
+                 e.message.includes('admin') || e.message.includes('consent')))) {
+                const tenantId = localStorage.getItem('crm_tenantId') || '287a70f9-e3d2-4102-bb0e-3296726fcb3a';
+                const clientId = localStorage.getItem('crm_clientId') || '1f609af8-79c7-410d-8540-050efc9e08cc';
+                throw new Error(`ADMIN_CONSENT_NEEDED|${tenantId}|${clientId}`);
+            }
+
             throw e;
         }
     }
