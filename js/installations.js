@@ -307,9 +307,6 @@ const Installations = (() => {
 
         const nonMesured = installations.filter(inst => {
             if (inst.status === 'completed') return false;
-            const installDate = new Date(inst.date);
-            const daysUntil = Math.round((installDate - today) / (1000 * 60 * 60 * 24));
-            if (daysUntil < 0) return false;
 
             let hasMesure = false;
             if (inst.mesureDate) hasMesure = true;
@@ -320,9 +317,14 @@ const Installations = (() => {
             return !hasMesure;
         }).sort((a, b) => new Date(a.date) - new Date(b.date));
 
+        // Past-due (date already passed) = most urgent
+        const overdue = nonMesured.filter(i => {
+            const d = Math.round((new Date(i.date) - today) / (1000 * 60 * 60 * 24));
+            return d < 0;
+        });
         const urgent = nonMesured.filter(i => {
             const d = Math.round((new Date(i.date) - today) / (1000 * 60 * 60 * 24));
-            return d <= 14;
+            return d >= 0 && d <= 14;
         });
         const warning = nonMesured.filter(i => {
             const d = Math.round((new Date(i.date) - today) / (1000 * 60 * 60 * 24));
@@ -337,13 +339,14 @@ const Installations = (() => {
         }
 
         let items = '';
-        nonMesured.slice(0, 6).forEach(inst => {
+        nonMesured.slice(0, 8).forEach(inst => {
             const daysUntil = Math.round((new Date(inst.date) - today) / (1000 * 60 * 60 * 24));
-            const urgency = daysUntil <= 14 ? 'urgent' : daysUntil <= 30 ? 'warning' : 'info';
+            const urgency = daysUntil < 0 ? 'urgent' : daysUntil <= 14 ? 'urgent' : daysUntil <= 30 ? 'warning' : 'info';
             const team = TEAMS.find(t => t.id === inst.teamId);
+            const delayText = daysUntil < 0 ? `EN RETARD (${Math.abs(daysUntil)}j)` : daysUntil === 0 ? `AUJOURD'HUI` : `Install dans ${daysUntil}j`;
             items += `<div class="mesure-widget-item mesure-widget-${urgency}" onclick="Installations.openDetail('${inst.id}')">
                 <span class="mesure-widget-client">${inst.clientName}</span>
-                <span class="mesure-widget-detail">${team ? team.name : ''} — Install dans ${daysUntil}j</span>
+                <span class="mesure-widget-detail">${team ? team.name : ''} — ${delayText}</span>
             </div>`;
         });
 
@@ -351,6 +354,7 @@ const Installations = (() => {
             <div class="mesure-widget-header">
                 <span class="mesure-widget-icon">📐</span>
                 <strong>${nonMesured.length} job${nonMesured.length > 1 ? 's' : ''} pas encore mesuré${nonMesured.length > 1 ? 'es' : ''}</strong>
+                ${overdue.length > 0 ? `<span class="mesure-count-urgent">⚠️ ${overdue.length} en retard!</span>` : ''}
                 ${urgent.length > 0 ? `<span class="mesure-count-urgent">🔴 ${urgent.length} urgent${urgent.length > 1 ? 'es' : ''}</span>` : ''}
                 ${warning.length > 0 ? `<span class="mesure-count-warning">🟡 ${warning.length} à planifier</span>` : ''}
             </div>
