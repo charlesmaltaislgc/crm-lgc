@@ -3047,5 +3047,137 @@ input, select, textarea { font-size: 16px; }
 .money-risk-item.won .money-risk-value { color: var(--success); }
 .money-risk-item.lost .money-risk-value { color: var(--text-muted); }
 
+/* ===== Mesure Status on Install Cards ===== */
+.mesure-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.mesure-badge.mesure-urgent {
+    background: #B22234;
+    color: white;
+}
+
+.mesure-badge.mesure-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.mesure-badge.mesure-ok {
+    background: #16a34a;
+    color: white;
+}
+
+.mesure-badge.mesure-pending {
+    background: #94a3b8;
+    color: white;
+}
+
+/* Urgent card pulsing border */
+.install-card.mesure-urgent-card {
+    animation: mesure-pulse 2s ease-in-out infinite;
+}
+
+@keyframes mesure-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(178, 34, 52, 0); }
+    50% { box-shadow: 0 0 0 3px rgba(178, 34, 52, 0.3); }
+}
+
+/* ===== Mesure Widget (top of installations) ===== */
+.mesure-widget {
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+}
+
+.mesure-widget-ok {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #16a34a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.mesure-widget-alert {
+    background: #FFF0F0;
+    border: 2px solid #B22234;
+}
+
+.mesure-widget-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    font-size: 15px;
+}
+
+.mesure-widget-icon { font-size: 20px; }
+
+.mesure-count-urgent {
+    background: #B22234;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.mesure-count-warning {
+    background: #f59e0b;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.mesure-widget-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 8px;
+}
+
+.mesure-widget-item {
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.mesure-widget-item:hover { transform: translateY(-1px); }
+
+.mesure-widget-urgent {
+    background: white;
+    border-left: 4px solid #B22234;
+}
+
+.mesure-widget-warning {
+    background: white;
+    border-left: 4px solid #f59e0b;
+}
+
+.mesure-widget-info {
+    background: white;
+    border-left: 4px solid #3b82f6;
+}
+
+.mesure-widget-client {
+    font-weight: 600;
+    color: var(--text);
+    display: block;
+}
+
+.mesure-widget-detail {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
 /* ===== Modal Medium ===== */
 .modal-md { width: 600px; max-width: 95vw; }

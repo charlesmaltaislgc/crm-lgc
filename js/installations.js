@@ -103,6 +103,8 @@ const Installations = (() => {
         loadData();
 
         container.innerHTML = `
+            ${renderMesureWidget()}
+
             <div class="install-calendar-nav">
                 <button class="btn btn-sm btn-outline" onclick="Installations.prevWeek()">◀ Semaine préc.</button>
                 <h3 class="install-week-title">${formatWeekTitle(currentWeekStart)}</h3>
@@ -112,8 +114,13 @@ const Installations = (() => {
             </div>
 
             <div class="install-legend">
-                ${TEAMS.map(t => `<span class="install-legend-item"><span class="install-dot" style="background:${t.color}"></span>${t.name}</span>`).join('')}
+                <span class="install-legend-item"><span class="install-dot" style="background:#B22234"></span>Pas mesuré (urgent)</span>
+                <span class="install-legend-item"><span class="install-dot" style="background:#f59e0b"></span>Pas mesuré (à planifier)</span>
+                <span class="install-legend-item"><span class="install-dot" style="background:#16a34a"></span>Mesuré ✅</span>
                 <span class="install-legend-item"><span class="install-dot" style="background:#94a3b8"></span>Complété</span>
+                <span style="margin-left:auto; color: var(--text-muted); font-size:12px">
+                    ${TEAMS.map(t => `${t.icon} ${t.name}`).join(' · ')}
+                </span>
             </div>
 
             <div class="install-calendar">
@@ -174,14 +181,18 @@ const Installations = (() => {
             } else {
                 dayInstalls.forEach(inst => {
                     const hasPhotos = photos[inst.id] && (photos[inst.id].before || photos[inst.id].after);
-                    html += `<div class="install-card ${inst.status}"
+                    const mesureStatus = getMesureStatusForInst(inst);
+                    const borderColor = inst.status === 'completed' ? '#94a3b8' : mesureStatus.color;
+                    const mesureBadge = inst.status !== 'completed' ? mesureStatus.badge : '';
+                    html += `<div class="install-card ${inst.status} ${mesureStatus.cssClass}"
                                   draggable="true"
                                   ondragstart="Installations.handleDragStart(event,'${inst.id}')"
-                                  style="border-left: 3px solid ${team.color}"
+                                  style="border-left: 4px solid ${borderColor}; background: ${mesureStatus.bg}"
                                   onclick="Installations.openDetail('${inst.id}')">
                         <div class="install-card-client">${inst.clientName}</div>
                         <div class="install-card-products">${inst.products}</div>
                         <div class="install-card-meta">
+                            ${mesureBadge}
                             ${inst.estimatedHours ? `<span>⏱ ${inst.estimatedHours}h</span>` : ''}
                             ${hasPhotos ? '<span>📸</span>' : ''}
                             ${inst.status === 'completed' ? '<span>✅</span>' : ''}
@@ -232,7 +243,120 @@ const Installations = (() => {
         `;
     }
 
-    // (mesures tracking done via deal pipeline alerts — no separate tab)
+    // =========================================
+    // MESURE STATUS FOR CALENDAR CARDS
+    // =========================================
+
+    function getMesureStatusForInst(inst) {
+        if (inst.status === 'completed') {
+            return { color: '#94a3b8', bg: '#f8f8f8', badge: '', cssClass: '' };
+        }
+
+        // Check if mesure is done (via linked deal or mesureDate on inst)
+        let hasMesure = false;
+        if (inst.mesureDate) {
+            hasMesure = true;
+        } else if (inst.dealId) {
+            const deal = (typeof Deals !== 'undefined' && Deals.getById) ? Deals.getById(inst.dealId) : null;
+            if (deal && deal.measurementDate) hasMesure = true;
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const installDate = new Date(inst.date);
+        const daysUntil = Math.round((installDate - today) / (1000 * 60 * 60 * 24));
+
+        if (hasMesure) {
+            return {
+                color: '#16a34a',
+                bg: '#f0fdf4',
+                badge: '<span class="mesure-badge mesure-ok">✅ Mesuré</span>',
+                cssClass: 'mesure-done'
+            };
+        }
+
+        // Not measured
+        if (daysUntil <= 14) {
+            return {
+                color: '#B22234',
+                bg: '#FFF0F0',
+                badge: `<span class="mesure-badge mesure-urgent">🔴 Pas mesuré (${daysUntil}j)</span>`,
+                cssClass: 'mesure-urgent-card'
+            };
+        } else if (daysUntil <= 30) {
+            return {
+                color: '#f59e0b',
+                bg: '#fffbeb',
+                badge: `<span class="mesure-badge mesure-warning">🟡 Pas mesuré (${daysUntil}j)</span>`,
+                cssClass: 'mesure-warning-card'
+            };
+        }
+
+        return {
+            color: '#3b82f6',
+            bg: '#ffffff',
+            badge: '<span class="mesure-badge mesure-pending">📐 À mesurer</span>',
+            cssClass: ''
+        };
+    }
+
+    function renderMesureWidget() {
+        loadData();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const nonMesured = installations.filter(inst => {
+            if (inst.status === 'completed') return false;
+            const installDate = new Date(inst.date);
+            const daysUntil = Math.round((installDate - today) / (1000 * 60 * 60 * 24));
+            if (daysUntil < 0) return false;
+
+            let hasMesure = false;
+            if (inst.mesureDate) hasMesure = true;
+            else if (inst.dealId) {
+                const deal = (typeof Deals !== 'undefined' && Deals.getById) ? Deals.getById(inst.dealId) : null;
+                if (deal && deal.measurementDate) hasMesure = true;
+            }
+            return !hasMesure;
+        }).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        const urgent = nonMesured.filter(i => {
+            const d = Math.round((new Date(i.date) - today) / (1000 * 60 * 60 * 24));
+            return d <= 14;
+        });
+        const warning = nonMesured.filter(i => {
+            const d = Math.round((new Date(i.date) - today) / (1000 * 60 * 60 * 24));
+            return d > 14 && d <= 30;
+        });
+
+        if (nonMesured.length === 0) {
+            return `<div class="mesure-widget mesure-widget-ok">
+                <span class="mesure-widget-icon">✅</span>
+                <span>Toutes les mesures sont prises!</span>
+            </div>`;
+        }
+
+        let items = '';
+        nonMesured.slice(0, 6).forEach(inst => {
+            const daysUntil = Math.round((new Date(inst.date) - today) / (1000 * 60 * 60 * 24));
+            const urgency = daysUntil <= 14 ? 'urgent' : daysUntil <= 30 ? 'warning' : 'info';
+            const team = TEAMS.find(t => t.id === inst.teamId);
+            items += `<div class="mesure-widget-item mesure-widget-${urgency}" onclick="Installations.openDetail('${inst.id}')">
+                <span class="mesure-widget-client">${inst.clientName}</span>
+                <span class="mesure-widget-detail">${team ? team.name : ''} — Install dans ${daysUntil}j</span>
+            </div>`;
+        });
+
+        return `<div class="mesure-widget mesure-widget-alert">
+            <div class="mesure-widget-header">
+                <span class="mesure-widget-icon">📐</span>
+                <strong>${nonMesured.length} job${nonMesured.length > 1 ? 's' : ''} pas encore mesuré${nonMesured.length > 1 ? 'es' : ''}</strong>
+                ${urgent.length > 0 ? `<span class="mesure-count-urgent">🔴 ${urgent.length} urgent${urgent.length > 1 ? 'es' : ''}</span>` : ''}
+                ${warning.length > 0 ? `<span class="mesure-count-warning">🟡 ${warning.length} à planifier</span>` : ''}
+            </div>
+            <div class="mesure-widget-list">${items}</div>
+        </div>`;
+    }
 
     // =========================================
     // NAVIGATION
