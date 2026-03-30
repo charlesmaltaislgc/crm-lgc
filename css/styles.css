@@ -3179,5 +3179,74 @@ input, select, textarea { font-size: 16px; }
     color: var(--text-secondary);
 }
 
+/* ===== Team Settings Editor ===== */
+.team-members-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.team-member-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.team-member-row .input-sm {
+    padding: 6px 8px;
+    font-size: 13px;
+}
+
+.team-member-row .btn-sm {
+    padding: 4px 8px;
+    min-height: 32px;
+}
+
+@media (max-width: 768px) {
+    .team-member-row {
+        flex-wrap: wrap;
+    }
+    .team-member-row .input-sm,
+    .team-member-row select {
+        min-width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+    .team-member-avatar {
+        display: none !important;
+    }
+}
+
+/* ===== Compose Template Options ===== */
+.compose-template-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.compose-template-option {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+}
+
+.compose-template-option:hover {
+    border-color: var(--primary);
+    background: #FFF5F5;
+}
+
+.compose-template-option.selected {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: white;
+}
+
 /* ===== Modal Medium ===== */
 .modal-md { width: 600px; max-width: 95vw; }

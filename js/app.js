@@ -734,6 +734,9 @@ const App = (() => {
         const eltheme = document.getElementById('setting-theme');
         if (eltheme) eltheme.value = theme;
 
+        // Team members editor
+        renderTeamSettings();
+
         // Email templates list in settings
         showEmailTemplatesManager();
 
@@ -753,6 +756,172 @@ const App = (() => {
         if (el1) localStorage.setItem('crm_relanceDelay', el1.value);
         if (el2) localStorage.setItem('crm_leadDelay', el2.value);
         if (el3) localStorage.setItem('crm_net30Delay', el3.value);
+    }
+
+    // ===== TEAM SETTINGS EDITOR =====
+    function renderTeamSettings() {
+        const container = document.getElementById('team-settings');
+        if (!container) return;
+
+        const team = Auth.getTeamMembers();
+        const roles = [
+            { value: 'directeur', label: 'Directeur' },
+            { value: 'vendeur', label: 'Vendeur' },
+            { value: 'directeur_usine', label: 'Directeur usine' },
+            { value: 'reception', label: 'Réception' },
+            { value: 'installateur', label: 'Installateur' },
+            { value: 'admin', label: 'Admin' },
+        ];
+
+        container.innerHTML = `
+            <div class="team-members-list">
+                ${team.map(m => `
+                    <div class="team-member-row" data-id="${m.id}">
+                        <span class="team-member-avatar" style="background:var(--primary);color:#fff;width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">${m.initials}</span>
+                        <input type="text" class="input-sm team-edit-name" value="${m.name}" placeholder="Nom" style="flex:2;min-width:120px">
+                        <input type="email" class="input-sm team-edit-email" value="${m.email}" placeholder="Courriel" style="flex:2;min-width:150px">
+                        <select class="input-sm team-edit-role" style="flex:1;min-width:100px">
+                            ${roles.map(r => `<option value="${r.value}" ${m.role === r.value ? 'selected' : ''}>${r.label}</option>`).join('')}
+                        </select>
+                        <button class="btn btn-sm btn-outline btn-save-member" data-id="${m.id}" title="Sauvegarder">💾</button>
+                        <button class="btn btn-sm btn-outline btn-delete-member" data-id="${m.id}" title="Supprimer" style="color:#B22234">✕</button>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+        // Save member buttons
+        container.querySelectorAll('.btn-save-member').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const row = btn.closest('.team-member-row');
+                const id = btn.dataset.id;
+                Auth.updateTeamMember(id, {
+                    name: row.querySelector('.team-edit-name').value,
+                    email: row.querySelector('.team-edit-email').value,
+                    role: row.querySelector('.team-edit-role').value,
+                });
+                showToast('Membre mis à jour', 'success');
+                renderTeamSettings();
+            });
+        });
+
+        // Delete member buttons
+        container.querySelectorAll('.btn-delete-member').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (confirm('Supprimer ce membre de l\'équipe?')) {
+                    Auth.removeTeamMember(btn.dataset.id);
+                    showToast('Membre supprimé', 'success');
+                    renderTeamSettings();
+                }
+            });
+        });
+    }
+
+    function addTeamMember() {
+        const name = prompt('Nom complet du nouveau membre:');
+        if (!name) return;
+        const email = prompt('Courriel (@pflgc.com):');
+        if (!email) return;
+        const role = prompt('Rôle (directeur, vendeur, installateur, reception):') || 'vendeur';
+        Auth.addTeamMember({ name, email, role });
+        showToast(`${name} ajouté à l'équipe`, 'success');
+        renderTeamSettings();
+    }
+
+    // ===== EMAIL COMPOSE =====
+    function openEmailCompose(dealId, template) {
+        const deal = dealId ? Deals.getById(dealId) : null;
+        const user = Auth.getUser();
+
+        // Default values
+        let to = deal?.clientEmail || '';
+        let subject = '';
+        let body = '';
+
+        if (template === 'soumission') {
+            subject = `Soumission - Portes et Fenêtres LGC - ${deal?.clientName || ''}`;
+            body = `<p>Bonjour ${deal?.clientName || ''},</p>
+<p>Veuillez trouver ci-joint notre soumission pour votre projet.</p>
+<p>N'hésitez pas à nous contacter pour toute question.</p>
+<p>Cordialement,<br>${user?.name || ''}<br>Portes et Fenêtres LGC<br>418-XXX-XXXX</p>`;
+        } else if (template === 'relance') {
+            subject = `Suivi de votre soumission - Portes et Fenêtres LGC`;
+            body = `<p>Bonjour ${deal?.clientName || ''},</p>
+<p>Je fais suite à la soumission que nous vous avons envoyée. Avez-vous eu le temps de la consulter?</p>
+<p>Je reste disponible pour en discuter ou apporter des modifications.</p>
+<p>Cordialement,<br>${user?.name || ''}<br>Portes et Fenêtres LGC</p>`;
+        } else if (template === 'contrat') {
+            subject = `Contrat à signer - Portes et Fenêtres LGC - ${deal?.clientName || ''}`;
+            body = `<p>Bonjour ${deal?.clientName || ''},</p>
+<p>Veuillez trouver ci-joint votre contrat. Merci de le signer et nous le retourner.</p>
+<p>Cordialement,<br>${user?.name || ''}<br>Portes et Fenêtres LGC</p>`;
+        }
+
+        const modal = document.getElementById('modal-email-compose');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        document.getElementById('email-compose-to').value = to;
+        document.getElementById('email-compose-subject').value = subject;
+        document.getElementById('email-compose-body').value = body;
+        modal.dataset.dealId = dealId || '';
+
+        // Show attachments from deal
+        const attachContainer = document.getElementById('email-compose-attachments');
+        if (attachContainer && deal) {
+            const attachments = getAttachments(dealId);
+            if (attachments.length > 0) {
+                attachContainer.innerHTML = '<label style="font-size:12px;color:var(--text-muted)">Pièces jointes du deal:</label>' +
+                    attachments.map(a => `
+                        <label class="email-attach-option" style="display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0">
+                            <input type="checkbox" class="email-attach-check" data-id="${a.id}" data-name="${a.name}" data-content="${a.content || ''}">
+                            ${getFileIcon(a.name).icon} ${a.name}
+                        </label>
+                    `).join('');
+            } else {
+                attachContainer.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Aucun fichier attaché au deal</span>';
+            }
+        }
+    }
+
+    async function sendComposedEmail() {
+        const to = document.getElementById('email-compose-to')?.value;
+        const subject = document.getElementById('email-compose-subject')?.value;
+        const body = document.getElementById('email-compose-body')?.value;
+
+        if (!to || !subject) {
+            showToast('Remplir le destinataire et l\'objet', 'error');
+            return;
+        }
+
+        if (Auth.isDemoMode()) {
+            showToast('Envoi de courriel non disponible en mode démo', 'warning');
+            return;
+        }
+
+        try {
+            // Collect checked attachments
+            const attachments = [];
+            document.querySelectorAll('.email-attach-check:checked').forEach(cb => {
+                if (cb.dataset.content) {
+                    attachments.push({
+                        name: cb.dataset.name,
+                        contentBytes: cb.dataset.content,
+                    });
+                }
+            });
+
+            await Graph.sendEmail(to, subject, body, null, attachments);
+            showToast('Courriel envoyé!', 'success');
+            document.getElementById('modal-email-compose')?.classList.add('hidden');
+
+            // Log activity
+            const dealId = document.getElementById('modal-email-compose')?.dataset.dealId;
+            if (dealId) {
+                addActivity('Courriel envoyé', `À: ${to} — ${subject}`, dealId);
+            }
+        } catch (e) {
+            showToast('Erreur envoi: ' + e.message, 'error');
+        }
     }
 
     // ===== ATTACHMENTS =====
@@ -1298,9 +1467,33 @@ const App = (() => {
         // Send button
         const sendBtn = document.getElementById('btn-send-compose');
         sendBtn.onclick = async () => {
-            await Deals.addNote(dealId, 'Courriel envoye: ' + document.getElementById('compose-subject').value, { type: 'email', icon: '📧' });
-            document.getElementById('modal-compose-email').classList.add('hidden');
-            showToast('Courriel enregistre (envoi M365 en mode reel)', 'success');
+            const to = document.getElementById('compose-to').value;
+            const subject = document.getElementById('compose-subject').value;
+            const body = document.getElementById('compose-body').value;
+
+            if (!to || !subject) {
+                showToast('Remplir le destinataire et l\'objet', 'error');
+                return;
+            }
+
+            sendBtn.disabled = true;
+            sendBtn.textContent = '⏳ Envoi...';
+
+            try {
+                if (!Auth.isDemoMode()) {
+                    // Send via Graph API
+                    const htmlBody = body.replace(/\n/g, '<br>');
+                    await Graph.sendEmail(to, subject, htmlBody);
+                }
+                await Deals.addNote(dealId, '📧 Courriel envoyé à ' + to + ': ' + subject, { type: 'email', icon: '📧' });
+                document.getElementById('modal-compose-email').classList.add('hidden');
+                showToast(Auth.isDemoMode() ? 'Courriel enregistré (mode démo, pas envoyé)' : 'Courriel envoyé via Outlook!', 'success');
+            } catch (e) {
+                showToast('Erreur envoi: ' + e.message, 'error');
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = '📤 Envoyer';
+            }
         };
 
         modal.classList.remove('hidden');
@@ -1516,6 +1709,12 @@ const App = (() => {
             applyTheme(e.target.value);
         });
 
+        // Team member add
+        document.getElementById('btn-add-member')?.addEventListener('click', addTeamMember);
+
+        // Email compose
+        document.getElementById('btn-send-composed-email')?.addEventListener('click', sendComposedEmail);
+
         // Deals list search
         document.getElementById('deals-search')?.addEventListener('input', (e) => {
             const q = e.target.value.toLowerCase();
@@ -1655,6 +1854,10 @@ const App = (() => {
         getAttachments,
         editMonthlyObjective,
         openComposeEmail,
+        openEmailCompose,
+        sendComposedEmail,
+        addTeamMember,
+        renderTeamSettings,
         triggerConfetti,
         showEmailTemplatesManager,
         get _editingDealId() { return editingDealId; },

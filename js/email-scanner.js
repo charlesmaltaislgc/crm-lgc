@@ -98,9 +98,19 @@ const EmailScanner = (() => {
             if (Auth.isDemoMode()) {
                 emails = generateDemoEmails();
             } else {
+                const token = await Auth.getToken();
+                if (!token || token === 'demo-token') {
+                    App.showToast('Connexion M365 requise pour scanner les courriels. Connectez-vous avec Microsoft 365.', 'error');
+                    scanning = false;
+                    updateUI('no-auth');
+                    return;
+                }
                 const weekAgo = new Date();
                 weekAgo.setDate(weekAgo.getDate() - 7);
                 emails = await Graph.getEmails(50, `receivedDateTime ge ${weekAgo.toISOString()}`);
+                if (!emails || emails.length === 0) {
+                    App.showToast('Aucun courriel trouvé dans les 7 derniers jours', 'info');
+                }
             }
 
             for (const email of emails) {
@@ -197,6 +207,23 @@ const EmailScanner = (() => {
                     <p style="font-size:24px">🔍</p>
                     <p>Analyse des courriels en cours...</p>
                     <p style="font-size:12px;color:var(--text-muted)">Vérification des clients existants...</p>
+                </div>
+            `;
+            return;
+        }
+
+        if (state === 'no-auth') {
+            container.innerHTML = `
+                <div class="email-placeholder">
+                    <p style="font-size:24px">🔒</p>
+                    <p><strong>Connexion Microsoft 365 requise</strong></p>
+                    <p style="font-size:13px;color:var(--text-muted);margin-top:8px">
+                        Pour scanner vos courriels Outlook, vous devez être connecté avec votre compte M365.<br>
+                        En mode démo, des courriels fictifs sont utilisés.
+                    </p>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:12px">
+                        Allez dans ⚙️ Paramètres → Azure AD pour configurer la connexion.
+                    </p>
                 </div>
             `;
             return;

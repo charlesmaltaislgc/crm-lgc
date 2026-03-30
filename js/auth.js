@@ -124,12 +124,23 @@ const Auth = (() => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
+            const email = (data.mail || data.userPrincipalName || '').toLowerCase();
+            const name = data.displayName || '';
+
+            // Match against known team members to get role
+            const team = getTeamMembers();
+            const match = team.find(u =>
+                u.email.toLowerCase() === email ||
+                (u.emails && u.emails.some(e => e.toLowerCase() === email)) ||
+                u.name.toLowerCase() === name.toLowerCase()
+            );
+
             return {
-                id: data.id,
-                name: data.displayName,
-                email: data.mail || data.userPrincipalName,
-                role: 'vendeur', // Default, can be changed in settings
-                initials: (data.displayName || '??').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+                id: match?.id || data.id,
+                name: name,
+                email: email,
+                role: match?.role || 'vendeur',
+                initials: (name || '??').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
             };
         } catch (e) {
             console.error('Failed to get user profile:', e);
@@ -172,6 +183,36 @@ const Auth = (() => {
         localStorage.setItem('crm_spSite', spSite);
     }
 
+    function saveTeam(members) {
+        localStorage.setItem('crm_team', JSON.stringify(members));
+    }
+
+    function addTeamMember(member) {
+        const team = getTeamMembers();
+        member.id = member.id || member.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        member.initials = member.initials || (member.name || '??').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        team.push(member);
+        saveTeam(team);
+        return member;
+    }
+
+    function updateTeamMember(memberId, updates) {
+        const team = getTeamMembers();
+        const idx = team.findIndex(m => m.id === memberId);
+        if (idx >= 0) {
+            Object.assign(team[idx], updates);
+            if (updates.name) {
+                team[idx].initials = updates.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+            }
+            saveTeam(team);
+        }
+    }
+
+    function removeTeamMember(memberId) {
+        const team = getTeamMembers().filter(m => m.id !== memberId);
+        saveTeam(team);
+    }
+
     return {
         init,
         login,
@@ -183,6 +224,10 @@ const Auth = (() => {
         isDemoMode,
         isDirector,
         getTeamMembers,
+        saveTeam,
+        addTeamMember,
+        updateTeamMember,
+        removeTeamMember,
         saveSettings
     };
 })();
