@@ -5,7 +5,7 @@ const Calendar = (() => {
     let upcomingEvents = [];
 
     async function loadUpcoming() {
-        if (Auth.isDemoMode()) {
+        if (Auth.isDemoMode() || Auth.useLocalStorage()) {
             upcomingEvents = generateDemoEvents();
             return upcomingEvents;
         }

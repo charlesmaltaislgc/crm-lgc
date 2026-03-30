@@ -11,7 +11,7 @@ const Contracts = (() => {
     let lastY = 0;
 
     async function loadContracts() {
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             const saved = localStorage.getItem(STORAGE_KEY);
             contracts = saved ? JSON.parse(saved) : [];
         } else {
@@ -32,7 +32,7 @@ const Contracts = (() => {
         const signUrl = `${window.location.origin}${window.location.pathname}?sign=${token}`;
 
         const contract = {
-            id: Auth.isDemoMode() ? 'C' + Date.now() : null,
+            id: Auth.useLocalStorage() ? 'C' + Date.now() : null,
             dealId,
             clientName: deal.clientName,
             clientEmail: deal.clientEmail,
@@ -52,7 +52,7 @@ const Contracts = (() => {
             description: `Contrat pour ${deal.products === 'les-deux' ? 'portes et fenêtres' : deal.products || 'travaux'} - ${deal.clientAddress || ''}`,
         };
 
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             contracts.push(contract);
             saveLocal();
         } else {
@@ -84,7 +84,7 @@ const Contracts = (() => {
             signatureImage: signatureImage || null,
         };
 
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             saveLocal();
         } else {
             await Graph.updateListItem('CRM_Contracts', contractId, {

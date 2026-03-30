@@ -6,7 +6,9 @@ const Shopify = (() => {
     let orders = [];
 
     async function loadOrders() {
-        if (Auth.isDemoMode()) {
+        const shopifyStore = localStorage.getItem('crm_shopifyStore');
+        if (!shopifyStore || Auth.useLocalStorage()) {
+            // No Shopify configured or using local storage — load demo/saved data
             const saved = localStorage.getItem(STORAGE_KEY);
             orders = saved ? JSON.parse(saved) : generateDemoOrders();
             if (!saved) saveLocal();
@@ -90,7 +92,7 @@ const Shopify = (() => {
         const idx = orders.findIndex(o => o.id === orderId);
         if (idx !== -1) {
             orders[idx].linkedDealId = dealId;
-            if (Auth.isDemoMode()) saveLocal();
+            if (Auth.useLocalStorage()) saveLocal();
             App.showToast('Paiement Shopify lié au deal', 'success');
         }
     }

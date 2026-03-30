@@ -6,7 +6,7 @@ const Team = (() => {
     let tasks = [];
 
     async function loadTasks() {
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             const saved = localStorage.getItem(TASKS_KEY);
             tasks = saved ? JSON.parse(saved) : generateDemoTasks();
             if (!saved) saveTasks();
@@ -22,14 +22,14 @@ const Team = (() => {
 
     async function createTask(taskData) {
         const task = {
-            id: Auth.isDemoMode() ? 'T' + Date.now() : null,
+            id: Auth.useLocalStorage() ? 'T' + Date.now() : null,
             ...taskData,
             taskStatus: 'pending',
             createdAt: new Date().toISOString(),
             createdBy: Auth.getUser().name,
         };
 
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             tasks.push(task);
             saveTasks();
         } else {
@@ -47,7 +47,7 @@ const Team = (() => {
         if (idx === -1) return;
         tasks[idx] = { ...tasks[idx], ...updates };
 
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             saveTasks();
         } else {
             await Graph.updateListItem('CRM_Tasks', id, updates);

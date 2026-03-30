@@ -171,6 +171,13 @@ const Auth = (() => {
     function isDemoMode() { return isDemo; }
     function isDirector() { return currentUser && currentUser.role === 'directeur'; }
 
+    // Use localStorage for data storage (always, unless SharePoint is explicitly configured)
+    function useLocalStorage() {
+        if (isDemo) return true;
+        const spSite = localStorage.getItem('crm_spSite');
+        return !spSite || spSite.trim() === '';
+    }
+
     function getTeamMembers() {
         if (isDemo) return demoUsers;
         const saved = localStorage.getItem('crm_team');
@@ -223,6 +230,7 @@ const Auth = (() => {
         isAuthenticated,
         isDemoMode,
         isDirector,
+        useLocalStorage,
         getTeamMembers,
         saveTeam,
         addTeamMember,

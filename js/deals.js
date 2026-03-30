@@ -33,7 +33,7 @@ const Deals = (() => {
     function getStageColor(id) { return STAGE_MAP[id]?.color || '#94a3b8'; }
 
     async function loadDeals() {
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             const saved = localStorage.getItem(STORAGE_KEY);
             deals = saved ? JSON.parse(saved) : generateDemoDeals();
             if (!saved) saveLocal();
@@ -44,9 +44,13 @@ const Deals = (() => {
                 deals = await Graph.getListItems('CRM_Deals');
                 notes = await Graph.getListItems('CRM_Notes');
             } catch (e) {
-                console.error('Failed to load deals from SharePoint:', e);
-                deals = [];
-                notes = [];
+                console.error('Failed to load deals from SharePoint, falling back to localStorage:', e);
+                // Fallback to localStorage
+                const saved = localStorage.getItem(STORAGE_KEY);
+                deals = saved ? JSON.parse(saved) : generateDemoDeals();
+                if (!saved) saveLocal();
+                const savedNotes = localStorage.getItem(NOTES_KEY);
+                notes = savedNotes ? JSON.parse(savedNotes) : [];
             }
         }
         return deals;
@@ -77,7 +81,7 @@ const Deals = (() => {
 
     async function create(dealData) {
         const deal = {
-            id: Auth.isDemoMode() ? 'D' + Date.now() : null,
+            id: Auth.useLocalStorage() ? 'D' + Date.now() : null,
             ...dealData,
             stage: dealData.stage || 1,
             status: 'active',
@@ -85,7 +89,7 @@ const Deals = (() => {
             updatedAt: new Date().toISOString(),
         };
 
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             deals.push(deal);
             saveLocal();
         } else {
@@ -107,7 +111,7 @@ const Deals = (() => {
         const oldStage = deals[idx].stage;
         deals[idx] = { ...deals[idx], ...updates, updatedAt: new Date().toISOString() };
 
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             saveLocal();
         } else {
             await Graph.updateListItem('CRM_Deals', id, mapToSharePoint(updates));
@@ -140,7 +144,7 @@ const Deals = (() => {
     async function addNote(dealId, text, meta = {}) {
         const user = Auth.getUser();
         const note = {
-            id: Auth.isDemoMode() ? 'N' + Date.now() : null,
+            id: Auth.useLocalStorage() ? 'N' + Date.now() : null,
             dealId,
             author: user.name,
             noteText: text,
@@ -149,7 +153,7 @@ const Deals = (() => {
             noteIcon: meta.icon || '',
         };
 
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             notes.push(note);
             saveLocal();
         } else {
@@ -364,7 +368,7 @@ const Deals = (() => {
             await addNote(dealId, 'Pas de reponse', { type: 'noreply', icon: '' });
         }
 
-        if (Auth.isDemoMode()) {
+        if (Auth.useLocalStorage()) {
             saveLocal();
         }
     }
