@@ -447,6 +447,16 @@
                             </div>
                         </div>
                         <div class="settings-section">
+                            <h3>📧 Modeles de courriels</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                                5 modeles pre-configures. Variables disponibles: {clientName}, {amount}, {vendorName}, {companyPhone}
+                            </p>
+                            <div id="email-templates-list">
+                                <!-- Populated by JS -->
+                            </div>
+                            <button class="btn btn-sm btn-outline" style="margin-top:12px" onclick="App.showEmailTemplatesManager()">Gerer les modeles</button>
+                        </div>
+                        <div class="settings-section">
                             <h3>Apparence</h3>
                             <div class="settings-form">
                                 <div class="form-group">
@@ -777,6 +787,7 @@
                 </div>
                 <div class="modal-footer-right">
                     <button type="button" class="btn btn-outline" data-modal="modal-deal">✖ Annuler</button>
+                    <button type="button" class="btn btn-outline" onclick="App.openComposeEmail(App._editingDealId)">📧 Courriel</button>
                     <button type="button" class="btn btn-outline btn-action-rdv" id="btn-deal-rdv" onclick="Calendar.showBookingModal(App._editingDealId)">📅 RDV</button>
                     <button type="button" class="btn btn-outline btn-action-contract" id="btn-deal-contract" onclick="Contracts.createContract(App._editingDealId)">✍️ Contrat</button>
                     <button type="button" class="btn btn-danger hidden" id="btn-deal-lost">💀 Perdu</button>

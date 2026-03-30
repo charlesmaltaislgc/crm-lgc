@@ -137,7 +137,7 @@ const Deals = (() => {
         App.addActivity('deal_won', `Deal gagné: ${deal.clientName} - ${formatMoney(deal.contractAmount || deal.quoteAmount)}`, id);
     }
 
-    async function addNote(dealId, text) {
+    async function addNote(dealId, text, meta = {}) {
         const user = Auth.getUser();
         const note = {
             id: Auth.isDemoMode() ? 'N' + Date.now() : null,
@@ -145,6 +145,8 @@ const Deals = (() => {
             author: user.name,
             noteText: text,
             noteDate: new Date().toISOString(),
+            noteType: meta.type || 'note', // note, call, email, noreply, stage, auto
+            noteIcon: meta.icon || '',
         };
 
         if (Auth.isDemoMode()) {
@@ -312,6 +314,7 @@ const Deals = (() => {
                 depositRequired: !isEntrepreneur ? Math.round(quoteAmount * 0.5) : 0,
                 paymentStatus: stage >= 14 ? 'paid' : 'pending',
                 mecinovQuoteNum: stage >= 4 ? `S${10000 + i}` : '',
+                followUpCount: stage >= 5 ? Math.floor(Math.random() * 4) : 0,
                 createdAt: leadDate.toISOString(),
                 updatedAt: new Date(today.getTime() - Math.random() * 7 * 86400000).toISOString(),
             };
@@ -338,6 +341,34 @@ const Deals = (() => {
         return new Date(dateStr).toLocaleDateString('fr-CA', { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
+    // Quick action: log a follow-up action on a deal
+    async function quickAction(dealId, actionType) {
+        const deal = getById(dealId);
+        if (!deal) return;
+
+        const now = new Date().toISOString();
+        const todayStr = now.split('T')[0];
+
+        if (actionType === 'call') {
+            deal.followUpCount = (deal.followUpCount || 0) + 1;
+            deal.lastFollowUp = todayStr;
+            deal.updatedAt = now;
+            await addNote(dealId, 'Appel effectue', { type: 'call', icon: '' });
+        } else if (actionType === 'email') {
+            deal.lastFollowUp = todayStr;
+            deal.updatedAt = now;
+            await addNote(dealId, 'Courriel envoye', { type: 'email', icon: '' });
+        } else if (actionType === 'noreply') {
+            deal.followUpCount = (deal.followUpCount || 0) + 1;
+            deal.updatedAt = now;
+            await addNote(dealId, 'Pas de reponse', { type: 'noreply', icon: '' });
+        }
+
+        if (Auth.isDemoMode()) {
+            saveLocal();
+        }
+    }
+
     return {
         loadDeals,
         getAll,
@@ -351,6 +382,7 @@ const Deals = (() => {
         markWon,
         addNote,
         getNotesForDeal,
+        quickAction,
         getStages,
         getStageName,
         getStageColor,

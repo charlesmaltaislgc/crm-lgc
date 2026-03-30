@@ -84,6 +84,11 @@ const Pipeline = (() => {
         else if (deadline?.status === 'due-soon') cardClass += ' due-soon';
         else if (overdue) cardClass += ' overdue';
 
+        const followUpCount = deal.followUpCount || 0;
+        const followUpBadge = followUpCount > 0
+            ? `<span class="card-followup-badge ${followUpCount >= 3 ? 'warning-relance' : ''}">📞 x${followUpCount}${followUpCount >= 3 ? ' ⚠️' : ''}</span>`
+            : '';
+
         return `
             <div class="${cardClass}"
                  draggable="true"
@@ -91,6 +96,7 @@ const Pipeline = (() => {
                  onclick="App.openDeal('${deal.id}')">
                 <div class="card-client">
                     ${deal.clientName}
+                    ${followUpBadge}
                     ${deadline?.status === 'overdue' ? `<span class="overdue-badge">🚨 ${deadline.label}</span>` : ''}
                     ${deadline?.status === 'due-soon' ? `<span class="due-soon-badge">⚠️ ${deadline.label}</span>` : ''}
                 </div>
@@ -106,6 +112,11 @@ const Pipeline = (() => {
                     </span>
                     ${delay !== null ? `<span class="card-delay">${delay}j lead→soum.</span>` : ''}
                     ${overdue && !deadline ? `<span class="card-delay">${daysSinceUpdate}j sans action</span>` : ''}
+                </div>
+                <div class="card-quick-actions" onclick="event.stopPropagation()">
+                    <button class="card-quick-btn btn-call" onclick="Pipeline.quickAction('${deal.id}','call')" title="Appel effectue">📞 Appele</button>
+                    <button class="card-quick-btn btn-email" onclick="Pipeline.quickAction('${deal.id}','email')" title="Courriel envoye">📧 Courriel</button>
+                    <button class="card-quick-btn btn-noreply" onclick="Pipeline.quickAction('${deal.id}','noreply')" title="Pas de reponse">❌ Pas rep.</button>
                 </div>
             </div>
         `;
@@ -286,6 +297,14 @@ const Pipeline = (() => {
         }
     }
 
+    async function quickAction(dealId, actionType) {
+        await Deals.quickAction(dealId, actionType);
+        const labels = { call: 'Appel enregistre', email: 'Courriel enregistre', noreply: 'Pas de reponse enregistre' };
+        App.showToast(labels[actionType] || 'Action enregistree', 'success');
+        render();
+        Alerts.refresh();
+    }
+
     return {
         render,
         renderKanban,
@@ -294,5 +313,6 @@ const Pipeline = (() => {
         setFilter,
         setView,
         populateFilters,
+        quickAction,
     };
 })();

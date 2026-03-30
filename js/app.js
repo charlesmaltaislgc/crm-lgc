@@ -91,9 +91,15 @@ const App = (() => {
             });
         }
 
+        // Init email templates
+        initEmailTemplates();
+
         // Initial render
         renderCurrentView();
         Alerts.refresh();
+
+        // Show daily summary banner
+        showDailyBanner(user);
     }
 
     // ===== NAVIGATION =====
@@ -182,6 +188,15 @@ const App = (() => {
         document.getElementById('kpi-overdue').style.color = stats.overdue > 0 ? 'var(--danger)' : 'var(--success)';
         document.getElementById('kpi-monthly-revenue').textContent = Deals.formatMoney(stats.monthlyRevenue);
 
+        // Monthly Objective Progress Bar
+        renderMonthlyObjective();
+
+        // Money at Risk Widget (directors only)
+        if (Auth.isDirector()) {
+            renderMoneyAtRisk();
+            renderLeaderboard();
+        }
+
         Pipeline.renderMiniPipeline();
         Alerts.refresh();
         Calendar.renderUpcoming();
@@ -231,6 +246,65 @@ const App = (() => {
                 <span class="activity-time">${timeAgo(a.date)}</span>
             </div>
         `).join('');
+    }
+
+    // ===== DAILY BANNER =====
+    function showDailyBanner(user) {
+        const existing = document.getElementById('daily-banner');
+        if (existing) existing.remove();
+
+        const allDeals = Deals.getAll();
+        const userId = user.id;
+        const isDir = Auth.isDirector();
+        const myDeals = isDir ? allDeals : allDeals.filter(d => d.assignedTo === userId);
+        const activeDeals = myDeals.filter(d => d.status === 'active');
+
+        // Overdue follow-ups (deals with followUpDueDate in the past)
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+        let overdueFollowUps = 0;
+        activeDeals.forEach(d => {
+            if (d.followUpDueDate && d.followUpDueDate < todayStr) overdueFollowUps++;
+        });
+
+        // Deals inactive 5+ days
+        let inactiveDeals = 0;
+        activeDeals.forEach(d => {
+            const daysSince = Deals.getDaysSince(d.updatedAt);
+            if (daysSince >= 5) inactiveDeals++;
+        });
+
+        // Tasks assigned to user
+        let taskCount = 0;
+        if (typeof Team !== 'undefined' && Team.getTasksForUser) {
+            taskCount = Team.getTasksForUser(userId).filter(t => t.status !== 'done').length;
+        }
+
+        // Also count overdue stage alerts
+        const overdueAlerts = activeDeals.filter(d => Deals.isOverdue(d)).length;
+        overdueFollowUps = Math.max(overdueFollowUps, overdueAlerts);
+
+        const firstName = user.name.split(' ')[0];
+        const banner = document.createElement('div');
+        banner.id = 'daily-banner';
+        banner.className = 'daily-banner';
+        banner.innerHTML = `
+            <div class="daily-banner-text">
+                <span class="greeting">Bonjour ${firstName}! 🔥</span>
+                <div class="daily-banner-stats">
+                    ${overdueFollowUps > 0 ? `<span class="daily-banner-stat">🔴 ${overdueFollowUps} relance${overdueFollowUps > 1 ? 's' : ''} en retard</span>` : ''}
+                    ${inactiveDeals > 0 ? `<span class="daily-banner-stat">⏳ ${inactiveDeals} deal${inactiveDeals > 1 ? 's' : ''} inactif${inactiveDeals > 1 ? 's' : ''}</span>` : ''}
+                    ${taskCount > 0 ? `<span class="daily-banner-stat">📋 ${taskCount} tache${taskCount > 1 ? 's' : ''}</span>` : ''}
+                    ${overdueFollowUps === 0 && inactiveDeals === 0 && taskCount === 0 ? '<span class="daily-banner-stat">✅ Tout est sous controle!</span>' : ''}
+                </div>
+            </div>
+            <button class="daily-banner-close" onclick="document.getElementById('daily-banner').remove()">✕</button>
+        `;
+
+        const viewDashboard = document.getElementById('view-dashboard');
+        if (viewDashboard) {
+            viewDashboard.insertBefore(banner, viewDashboard.firstChild);
+        }
     }
 
     // ===== DEAL MODAL =====
@@ -382,11 +456,59 @@ const App = (() => {
         saveBtn.innerHTML = '🚀 Envoi...';
 
         if (editingDealId) {
+            // Detect stage change for auto-follow-ups and stage logging
+            const oldDeal = Deals.getById(editingDealId);
+            const oldStage = oldDeal ? oldDeal.stage : null;
+            const newStage = data.stage;
+
             await Deals.update(editingDealId, data);
             Clients.syncFromDeal(data);
             if (noteText) {
                 await Deals.addNote(editingDealId, noteText);
                 form.querySelector('[name="newNote"]').value = '';
+            }
+
+            // Auto-log stage change as timeline entry
+            if (oldStage && newStage && oldStage !== newStage) {
+                await Deals.addNote(editingDealId,
+                    `Etape changee: ${Deals.getStageName(oldStage)} → ${Deals.getStageName(newStage)}`,
+                    { type: 'stage', icon: '🔄' }
+                );
+            }
+
+            // Auto-scheduled follow-ups: stage 5 → +2 days
+            if (newStage === 5 && oldStage !== 5) {
+                const followDate = skipWeekends(new Date(), 2);
+                const followDateStr = followDate.toISOString().split('T')[0];
+                await Deals.update(editingDealId, { followUpDueDate: followDateStr });
+                await Deals.addNote(editingDealId,
+                    `📋 Relance automatique programmee pour ${Deals.formatDate(followDateStr)}`,
+                    { type: 'auto', icon: '📋' }
+                );
+            }
+
+            // Auto-scheduled follow-ups: stage 6 → +3 days
+            if (newStage === 6 && oldStage !== 6) {
+                const followDate = skipWeekends(new Date(), 3);
+                const followDateStr = followDate.toISOString().split('T')[0];
+                await Deals.update(editingDealId, { followUpDueDate: followDateStr });
+                const currentDeal = Deals.getById(editingDealId);
+                if (currentDeal && (currentDeal.followUpCount || 0) >= 3) {
+                    await Deals.addNote(editingDealId,
+                        `⚠️ 3e relance - Relance automatique programmee pour ${Deals.formatDate(followDateStr)}`,
+                        { type: 'auto', icon: '⚠️' }
+                    );
+                } else {
+                    await Deals.addNote(editingDealId,
+                        `📋 Relance automatique programmee pour ${Deals.formatDate(followDateStr)}`,
+                        { type: 'auto', icon: '📋' }
+                    );
+                }
+            }
+
+            // Confetti on deal completed (stage 14 or won)
+            if ((newStage === 14 && oldStage !== 14) || (data.status === 'won')) {
+                triggerConfetti();
             }
         } else {
             if (!data.clientName || !data.clientPhone || !data.clientEmail) {
@@ -450,15 +572,27 @@ const App = (() => {
             return;
         }
 
-        container.innerHTML = notes.map(note => `
-            <div class="note-item">
-                <div class="note-header">
-                    <span class="note-author">${note.author}</span>
-                    <span class="note-date">${Deals.formatDate(note.noteDate)}</span>
+        const typeIcons = {
+            note: '📝',
+            call: '📞',
+            email: '📧',
+            noreply: '❌',
+            stage: '🔄',
+            auto: '⚙️',
+        };
+
+        container.innerHTML = `<div class="activity-timeline">` + notes.map(note => {
+            const nType = note.noteType || 'note';
+            const icon = note.noteIcon || typeIcons[nType] || '📝';
+            return `
+                <div class="timeline-entry type-${nType}">
+                    <span class="timeline-icon">${icon}</span>
+                    <span class="timeline-author">${note.author}</span>
+                    <div class="timeline-text">${note.noteText}</div>
+                    <span class="timeline-date">${Deals.formatDate(note.noteDate)}</span>
                 </div>
-                <div class="note-text">${note.noteText}</div>
-            </div>
-        `).join('');
+            `;
+        }).join('') + `</div>`;
     }
 
     function updateDelayIndicator() {
@@ -596,6 +730,9 @@ const App = (() => {
         const theme = localStorage.getItem('crm_theme') || 'light';
         const eltheme = document.getElementById('setting-theme');
         if (eltheme) eltheme.value = theme;
+
+        // Email templates list in settings
+        showEmailTemplatesManager();
 
         // Shopify settings
         const shopifyStore = localStorage.getItem('crm_shopifyStore') || '';
@@ -787,6 +924,395 @@ const App = (() => {
             .reduce((sum, d) => sum + (d.contractAmount || d.quoteAmount || 0), 0);
 
         return { activeDeals: active.length, pipelineValue, conversionRate, avgDelay, overdue, monthlyRevenue };
+    }
+
+    // ===== MONTHLY OBJECTIVE =====
+    function renderMonthlyObjective() {
+        let container = document.getElementById('monthly-objective-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'monthly-objective-container';
+            const dashView = document.getElementById('view-dashboard');
+            const banner = document.getElementById('daily-banner');
+            const alertsSection = document.getElementById('alerts-section');
+            const insertBefore = alertsSection || dashView?.firstChild;
+            if (banner && banner.nextSibling) {
+                dashView.insertBefore(container, banner.nextSibling);
+            } else if (insertBefore) {
+                dashView.insertBefore(container, insertBefore);
+            }
+        }
+
+        const objective = parseInt(localStorage.getItem('crm_monthlyObjective') || '150000');
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const wonThisMonth = Deals.getAll()
+            .filter(d => d.status === 'won' && d.completedDate && d.completedDate >= monthStart);
+        const revenue = wonThisMonth.reduce((sum, d) => sum + (d.contractAmount || d.quoteAmount || 0), 0);
+        const pct = Math.min(100, Math.round((revenue / objective) * 100));
+        const colorClass = pct >= 75 ? 'green' : pct >= 50 ? 'yellow' : 'red';
+
+        container.innerHTML = `
+            <div class="monthly-objective">
+                <div class="monthly-objective-header">
+                    <span class="monthly-objective-title">🎯 Objectif mensuel</span>
+                    <span class="monthly-objective-values">
+                        ${Deals.formatMoney(revenue)} / ${Deals.formatMoney(objective)}
+                        <button class="monthly-objective-edit" onclick="App.editMonthlyObjective()">modifier</button>
+                    </span>
+                </div>
+                <div class="monthly-objective-bar">
+                    <div class="monthly-objective-fill ${colorClass}" style="width: ${Math.max(pct, 5)}%">
+                        ${pct}%
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function editMonthlyObjective() {
+        const current = localStorage.getItem('crm_monthlyObjective') || '150000';
+        const newVal = prompt('Nouvel objectif mensuel ($):', current);
+        if (newVal && !isNaN(parseInt(newVal))) {
+            localStorage.setItem('crm_monthlyObjective', parseInt(newVal).toString());
+            renderMonthlyObjective();
+            showToast('Objectif mis a jour', 'success');
+        }
+    }
+
+    // ===== MONEY AT RISK WIDGET =====
+    function renderMoneyAtRisk() {
+        let container = document.getElementById('money-risk-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'money-risk-container';
+            const kpiGrid = document.querySelector('#view-dashboard .kpi-grid');
+            if (kpiGrid) kpiGrid.parentNode.insertBefore(container, kpiGrid.nextSibling);
+        }
+
+        const allDeals = Deals.getAll();
+        const active = allDeals.filter(d => d.status === 'active');
+        const pipelineTotal = active.reduce((sum, d) => sum + (d.quoteAmount || 0), 0);
+
+        // At risk: active deals with > 10 days since update
+        const atRiskDeals = active.filter(d => Deals.getDaysSince(d.updatedAt) > 10);
+        const atRiskValue = atRiskDeals.reduce((sum, d) => sum + (d.quoteAmount || 0), 0);
+
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const wonThisMonth = allDeals.filter(d => d.status === 'won' && d.completedDate && d.completedDate >= monthStart);
+        const wonValue = wonThisMonth.reduce((sum, d) => sum + (d.contractAmount || d.quoteAmount || 0), 0);
+
+        const lostThisMonth = allDeals.filter(d => d.status === 'lost' && d.completedDate && d.completedDate >= monthStart);
+        const lostValue = lostThisMonth.reduce((sum, d) => sum + (d.quoteAmount || 0), 0);
+
+        container.innerHTML = `
+            <div class="money-risk-widget">
+                <h3 class="section-title">💰 Argent en jeu</h3>
+                <div class="money-risk-grid">
+                    <div class="money-risk-item active">
+                        <div class="money-risk-value">${Deals.formatMoney(pipelineTotal)}</div>
+                        <div class="money-risk-label">Pipeline actif</div>
+                    </div>
+                    <div class="money-risk-item risk">
+                        <div class="money-risk-value">${Deals.formatMoney(atRiskValue)}</div>
+                        <div class="money-risk-label">🔥 A risque >10j (${atRiskDeals.length} deals)</div>
+                    </div>
+                    <div class="money-risk-item won">
+                        <div class="money-risk-value">${Deals.formatMoney(wonValue)}</div>
+                        <div class="money-risk-label">✅ Ferme ce mois</div>
+                    </div>
+                    <div class="money-risk-item lost">
+                        <div class="money-risk-value">${Deals.formatMoney(lostValue)}</div>
+                        <div class="money-risk-label">📉 Perdu ce mois</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // ===== VENDOR LEADERBOARD =====
+    function renderLeaderboard() {
+        let container = document.getElementById('leaderboard-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'leaderboard-container';
+            const recentActivity = document.querySelector('#view-dashboard .recent-activity');
+            if (recentActivity) recentActivity.parentNode.insertBefore(container, recentActivity);
+        }
+
+        const team = Auth.getTeamMembers();
+        const allDeals = Deals.getAll();
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+
+        const vendors = team.filter(m => ['vendeur', 'directeur', 'directeur_usine'].includes(m.role));
+        const vendorStats = vendors.map(v => {
+            const myDeals = allDeals.filter(d => d.assignedTo === v.id);
+            const wonThisMonth = myDeals.filter(d => d.status === 'won' && d.completedDate && d.completedDate >= monthStart);
+            const revenue = wonThisMonth.reduce((sum, d) => sum + (d.contractAmount || d.quoteAmount || 0), 0);
+
+            // Calculate streak: consecutive wins from most recent
+            const sorted = myDeals.filter(d => d.status === 'won' || d.status === 'lost')
+                .sort((a, b) => new Date(b.completedDate || b.updatedAt) - new Date(a.completedDate || a.updatedAt));
+            let streak = 0;
+            for (const d of sorted) {
+                if (d.status === 'won') streak++;
+                else break;
+            }
+
+            return { ...v, wonCount: wonThisMonth.length, revenue, streak };
+        }).sort((a, b) => b.revenue - a.revenue);
+
+        if (vendorStats.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const rows = vendorStats.map((v, idx) => {
+            const isLeader = idx === 0 && v.revenue > 0;
+            const rankEmoji = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}`;
+            return `
+                <tr class="${isLeader ? 'leader' : ''}">
+                    <td class="leaderboard-rank">${rankEmoji}</td>
+                    <td class="leaderboard-name">${v.name}</td>
+                    <td>${v.wonCount}</td>
+                    <td><strong>${Deals.formatMoney(v.revenue)}</strong></td>
+                    <td>${v.streak > 0 ? `<span class="leaderboard-streak">🔥 ${v.streak}</span>` : '-'}</td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="leaderboard-section">
+                <h3 class="section-title">🏆 Classement vendeurs (ce mois)</h3>
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Vendeur</th>
+                            <th>Deals fermes</th>
+                            <th>Revenue</th>
+                            <th>Streak</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    // ===== CONFETTI ANIMATION =====
+    function triggerConfetti() {
+        const canvas = document.createElement('canvas');
+        canvas.id = 'confetti-canvas';
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const particles = [];
+        const colors = ['#ff0', '#f00', '#0f0', '#00f', '#f0f', '#0ff', '#ff8c00', '#22c55e', '#1a56db'];
+        for (let i = 0; i < 150; i++) {
+            particles.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height - canvas.height,
+                w: Math.random() * 10 + 5,
+                h: Math.random() * 6 + 3,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                vx: (Math.random() - 0.5) * 4,
+                vy: Math.random() * 3 + 2,
+                rot: Math.random() * 360,
+                rotSpeed: (Math.random() - 0.5) * 10,
+            });
+        }
+
+        let frame = 0;
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.rot += p.rotSpeed;
+                p.vy += 0.05;
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate((p.rot * Math.PI) / 180);
+                ctx.fillStyle = p.color;
+                ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+                ctx.restore();
+            });
+            frame++;
+            if (frame < 180) {
+                requestAnimationFrame(animate);
+            } else {
+                canvas.remove();
+            }
+        }
+        animate();
+    }
+
+    // ===== SKIP WEEKENDS HELPER =====
+    function skipWeekends(fromDate, addDays) {
+        const d = new Date(fromDate);
+        let added = 0;
+        while (added < addDays) {
+            d.setDate(d.getDate() + 1);
+            if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+        }
+        return d;
+    }
+
+    // ===== EMAIL TEMPLATES =====
+    const DEFAULT_TEMPLATES = [
+        {
+            id: 'tpl_soumission',
+            name: 'Envoi de soumission',
+            subject: 'Votre soumission - Portes et Fenetres LGC',
+            body: 'Bonjour {clientName},\n\nVeuillez trouver ci-joint notre soumission pour un montant de {amount}.\n\nN\'hesitez pas a nous contacter pour toute question.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+        },
+        {
+            id: 'tpl_relance1',
+            name: 'Relance #1 — Suivi soumission',
+            subject: 'Suivi de notre soumission - Portes et Fenetres LGC',
+            body: 'Bonjour {clientName},\n\nJe fais suite a la soumission que nous vous avons envoyee recemment pour un montant de {amount}.\n\nAvez-vous eu la chance de la consulter? Je suis disponible pour repondre a vos questions.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+        },
+        {
+            id: 'tpl_relance2',
+            name: 'Relance #2 — Derniere chance',
+            subject: 'Derniere chance - Votre projet de portes et fenetres',
+            body: 'Bonjour {clientName},\n\nJe souhaitais vous relancer une derniere fois concernant votre projet.\n\nNotre soumission de {amount} reste valide pour une duree limitee. Si vous avez des questions ou souhaitez modifier le projet, n\'hesitez pas.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+        },
+        {
+            id: 'tpl_rdv',
+            name: 'Confirmation de RDV',
+            subject: 'Confirmation de votre rendez-vous - Portes et Fenetres LGC',
+            body: 'Bonjour {clientName},\n\nCeci est pour confirmer notre rendez-vous.\n\nN\'hesitez pas a me contacter si vous avez besoin de reporter.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+        },
+        {
+            id: 'tpl_acompte',
+            name: 'Acompte recu — Merci!',
+            subject: 'Confirmation de reception de votre acompte - LGC',
+            body: 'Bonjour {clientName},\n\nNous accusons reception de votre acompte. Merci!\n\nVotre commande est maintenant en cours de traitement. Nous vous tiendrons informe de la suite.\n\nCordialement,\n{vendorName}\nPortes et Fenetres LGC\n{companyPhone}',
+        },
+    ];
+
+    function initEmailTemplates() {
+        const saved = localStorage.getItem('crm_emailTemplates');
+        if (!saved) {
+            localStorage.setItem('crm_emailTemplates', JSON.stringify(DEFAULT_TEMPLATES));
+        }
+    }
+
+    function getEmailTemplates() {
+        const saved = localStorage.getItem('crm_emailTemplates');
+        return saved ? JSON.parse(saved) : DEFAULT_TEMPLATES;
+    }
+
+    function openComposeEmail(dealId) {
+        const deal = Deals.getById(dealId);
+        if (!deal) return;
+
+        const templates = getEmailTemplates();
+        const user = Auth.getUser();
+        const team = Auth.getTeamMembers();
+        const vendor = team.find(t => t.id === deal.assignedTo) || user;
+
+        // Create compose modal if not exist
+        let modal = document.getElementById('modal-compose-email');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'modal-compose-email';
+            modal.className = 'modal hidden';
+            modal.innerHTML = `
+                <div class="modal-overlay" onclick="document.getElementById('modal-compose-email').classList.add('hidden')"></div>
+                <div class="modal-content modal-lg" style="z-index:1">
+                    <div class="modal-header">
+                        <h3>📧 Envoyer un courriel</h3>
+                        <button class="modal-close" onclick="document.getElementById('modal-compose-email').classList.add('hidden')">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>Modele</label>
+                            <div id="compose-templates" class="compose-template-select"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>A</label>
+                            <input type="email" id="compose-to" class="input-sm" style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Sujet</label>
+                            <input type="text" id="compose-subject" class="input-sm" style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Message</label>
+                            <textarea id="compose-body" rows="8" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline" onclick="document.getElementById('modal-compose-email').classList.add('hidden')">Annuler</button>
+                        <button class="btn btn-primary" id="btn-send-compose">📤 Envoyer</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Populate
+        document.getElementById('compose-to').value = deal.clientEmail || '';
+        const templatesDiv = document.getElementById('compose-templates');
+        templatesDiv.innerHTML = templates.map(tpl => `
+            <div class="compose-template-option" data-tpl-id="${tpl.id}">
+                ${tpl.name}
+            </div>
+        `).join('');
+
+        // Template click handlers
+        templatesDiv.querySelectorAll('.compose-template-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+                templatesDiv.querySelectorAll('.compose-template-option').forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                const tpl = templates.find(t => t.id === opt.dataset.tplId);
+                if (tpl) {
+                    const vars = {
+                        '{clientName}': deal.clientName || '',
+                        '{amount}': Deals.formatMoney(deal.quoteAmount || deal.contractAmount || 0),
+                        '{vendorName}': vendor.name || '',
+                        '{companyPhone}': '(418) 832-0330',
+                    };
+                    let body = tpl.body;
+                    let subject = tpl.subject;
+                    for (const [k, v] of Object.entries(vars)) {
+                        body = body.split(k).join(v);
+                        subject = subject.split(k).join(v);
+                    }
+                    document.getElementById('compose-subject').value = subject;
+                    document.getElementById('compose-body').value = body;
+                }
+            });
+        });
+
+        // Send button
+        const sendBtn = document.getElementById('btn-send-compose');
+        sendBtn.onclick = async () => {
+            await Deals.addNote(dealId, 'Courriel envoye: ' + document.getElementById('compose-subject').value, { type: 'email', icon: '📧' });
+            document.getElementById('modal-compose-email').classList.add('hidden');
+            showToast('Courriel enregistre (envoi M365 en mode reel)', 'success');
+        };
+
+        modal.classList.remove('hidden');
+    }
+
+    function showEmailTemplatesManager() {
+        const templates = getEmailTemplates();
+        const container = document.getElementById('email-templates-list');
+        if (!container) return;
+        container.innerHTML = templates.map(tpl => `
+            <div class="email-template-card">
+                <span class="email-template-name">${tpl.name}</span>
+                <span style="font-size:11px;color:var(--text-muted)">${tpl.subject}</span>
+            </div>
+        `).join('');
     }
 
     // ===== DARK MODE =====
@@ -1124,6 +1650,10 @@ const App = (() => {
         getDeadlineStatus,
         openGoogleMaps,
         getAttachments,
+        editMonthlyObjective,
+        openComposeEmail,
+        triggerConfetti,
+        showEmailTemplatesManager,
         get _editingDealId() { return editingDealId; },
     };
 })();

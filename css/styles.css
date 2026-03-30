@@ -2424,3 +2424,426 @@ a:hover { text-decoration: underline; }
 .contract-file-label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .contract-email-preview { margin-top: 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .preview-label { background: var(--bg); padding: 6px 12px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border); }
+
+/* ===== Follow-Up Badge on Pipeline Cards ===== */
+.card-followup-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--info);
+    background: var(--info-light);
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-left: 4px;
+}
+
+.card-followup-badge.warning-relance {
+    color: #b45309;
+    background: var(--warning-light);
+}
+
+/* ===== Quick Action Buttons on Pipeline Cards ===== */
+.card-quick-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.card-quick-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--text-secondary);
+}
+
+.card-quick-btn:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.card-quick-btn.btn-call:hover { background: #dcfce7; border-color: var(--success); color: var(--success); }
+.card-quick-btn.btn-email:hover { background: #dbeafe; border-color: var(--primary); color: var(--primary); }
+.card-quick-btn.btn-noreply:hover { background: #fef2f2; border-color: var(--danger); color: var(--danger); }
+
+/* ===== "Ta Journee" Banner ===== */
+.daily-banner {
+    background: linear-gradient(135deg, #1e3a5f 0%, #1a56db 100%);
+    color: white;
+    padding: 16px 24px;
+    border-radius: var(--radius-lg);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: var(--shadow-lg);
+    animation: fadeInDown 0.5s ease;
+}
+
+.daily-banner-text {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.daily-banner-text .greeting {
+    font-size: 18px;
+    font-weight: 800;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.daily-banner-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 13px;
+    opacity: 0.95;
+}
+
+.daily-banner-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.daily-banner-close {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    flex-shrink: 0;
+}
+
+.daily-banner-close:hover {
+    background: rgba(255,255,255,0.35);
+}
+
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Confetti Canvas ===== */
+#confetti-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* ===== Monthly Objective Progress Bar ===== */
+.monthly-objective {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+}
+
+.monthly-objective-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.monthly-objective-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.monthly-objective-values {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.monthly-objective-bar {
+    width: 100%;
+    height: 24px;
+    background: var(--bg);
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+}
+
+.monthly-objective-fill {
+    height: 100%;
+    border-radius: 12px;
+    transition: width 0.6s ease;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    color: white;
+    min-width: 40px;
+}
+
+.monthly-objective-fill.green { background: linear-gradient(90deg, #22c55e, #16a34a); }
+.monthly-objective-fill.yellow { background: linear-gradient(90deg, #eab308, #f59e0b); }
+.monthly-objective-fill.red { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+.monthly-objective-edit {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    text-decoration: underline;
+    margin-left: 8px;
+}
+
+.monthly-objective-edit:hover { color: var(--primary); }
+
+/* ===== Deal Activity Timeline ===== */
+.activity-timeline {
+    position: relative;
+    padding-left: 24px;
+    margin-bottom: 16px;
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.activity-timeline::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+}
+
+.timeline-entry {
+    position: relative;
+    padding: 8px 0 8px 16px;
+    font-size: 13px;
+}
+
+.timeline-entry::before {
+    content: '';
+    position: absolute;
+    left: -18px;
+    top: 12px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+    border: 2px solid var(--bg-card);
+    z-index: 1;
+}
+
+.timeline-entry.type-note::before { background: var(--primary); }
+.timeline-entry.type-call::before { background: var(--success); }
+.timeline-entry.type-email::before { background: var(--info); }
+.timeline-entry.type-noreply::before { background: var(--danger); }
+.timeline-entry.type-stage::before { background: var(--warning); }
+.timeline-entry.type-auto::before { background: #a855f7; }
+
+.timeline-icon {
+    display: inline-block;
+    margin-right: 4px;
+}
+
+.timeline-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: block;
+    margin-top: 2px;
+}
+
+.timeline-text {
+    color: var(--text-secondary);
+}
+
+.timeline-author {
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--text);
+}
+
+/* ===== Vendor Leaderboard (Gamification) ===== */
+.leaderboard-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.leaderboard-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.leaderboard-table th {
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.leaderboard-table td {
+    padding: 10px 12px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+}
+
+.leaderboard-table tr:last-child td { border-bottom: none; }
+
+.leaderboard-table tr.leader {
+    background: linear-gradient(90deg, #fef9c3, #fffbeb);
+    border-left: 3px solid #eab308;
+}
+
+.leaderboard-rank {
+    font-weight: 800;
+    font-size: 16px;
+}
+
+.leaderboard-name {
+    font-weight: 700;
+}
+
+.leaderboard-streak {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #f97316;
+}
+
+/* ===== Email Templates ===== */
+.email-templates-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.email-template-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.email-template-card:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+}
+
+.email-template-name {
+    font-weight: 700;
+    font-size: 13px;
+}
+
+/* Email Compose Modal */
+.compose-template-select {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.compose-template-option {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 13px;
+}
+
+.compose-template-option:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+
+.compose-template-option.selected {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    font-weight: 700;
+}
+
+/* ===== Money At Risk Widget ===== */
+.money-risk-widget {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.money-risk-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.money-risk-item {
+    text-align: center;
+    padding: 12px;
+    background: var(--bg);
+    border-radius: var(--radius);
+}
+
+.money-risk-value {
+    font-size: 20px;
+    font-weight: 800;
+}
+
+.money-risk-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.money-risk-item.active .money-risk-value { color: var(--primary); }
+.money-risk-item.risk .money-risk-value { color: var(--danger); }
+.money-risk-item.won .money-risk-value { color: var(--success); }
+.money-risk-item.lost .money-risk-value { color: var(--text-muted); }
+
+/* ===== Modal Medium ===== */
+.modal-md { width: 600px; max-width: 95vw; }
