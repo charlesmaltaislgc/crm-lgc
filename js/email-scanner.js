@@ -377,6 +377,9 @@ const EmailScanner = (() => {
                             <button class="btn btn-sm btn-primary" onclick="EmailScanner.createDealFromEmail('${lead.id}')">
                                 Créer deal
                             </button>
+                            <button class="btn btn-sm btn-outline" onclick="EmailScanner.linkToExistingDeal('${lead.id}')">
+                                Rattacher à un lead
+                            </button>
                         `}
                         <button class="btn btn-sm btn-outline" onclick="EmailScanner.dismiss('${lead.id}')">
                             Ignorer
@@ -393,6 +396,89 @@ const EmailScanner = (() => {
         const lead = detectedLeads.find(l => l.id === emailId);
         if (!lead || !lead.existingDeal) return;
         App.openDeal(lead.existingDeal.id);
+    }
+
+    function linkToExistingDeal(emailId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead) return;
+
+        const allDeals = Deals.getAll().filter(d => d.status === 'active' || d.status === 'won');
+        if (allDeals.length === 0) {
+            App.showToast('Aucun deal actif pour rattacher ce courriel', 'warning');
+            return;
+        }
+
+        // Create a simple picker modal
+        let modal = document.getElementById('modal-link-email');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'modal-link-email';
+            modal.className = 'modal';
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="document.getElementById('modal-link-email').classList.add('hidden')"></div>
+            <div class="modal-content" style="z-index:2;max-width:500px">
+                <div class="modal-header">
+                    <h3>🔗 Rattacher à un deal existant</h3>
+                    <button class="modal-close" onclick="document.getElementById('modal-link-email').classList.add('hidden')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                        Courriel de <strong>${lead.from}</strong>: "${lead.subject}"
+                    </p>
+                    <input type="text" id="link-deal-search" class="input-sm" style="width:100%;margin-bottom:12px" placeholder="🔍 Rechercher un client..." oninput="EmailScanner._filterLinkDeals(this.value)">
+                    <div id="link-deal-list" style="max-height:300px;overflow-y:auto">
+                        ${allDeals.slice(0, 20).map(d => `
+                            <div class="dir-card" style="margin-bottom:4px;cursor:pointer" onclick="EmailScanner._doLink('${emailId}','${d.id}')">
+                                <div style="flex:1">
+                                    <div style="font-weight:600">${d.clientName}</div>
+                                    <div style="font-size:12px;color:var(--text-muted)">${Deals.getStageName(d.stage)} — ${Deals.formatMoney(d.quoteAmount || d.contractAmount || 0)}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+        modal.classList.remove('hidden');
+    }
+
+    function _filterLinkDeals(search) {
+        const allDeals = Deals.getAll().filter(d => d.status === 'active' || d.status === 'won');
+        const filtered = search
+            ? allDeals.filter(d => d.clientName.toLowerCase().includes(search.toLowerCase()))
+            : allDeals.slice(0, 20);
+        const list = document.getElementById('link-deal-list');
+        if (!list) return;
+        list.innerHTML = filtered.map(d => `
+            <div class="dir-card" style="margin-bottom:4px;cursor:pointer" onclick="EmailScanner._doLink('${list.closest('.modal')?.id ? '' : ''}','${d.id}')">
+                <div style="flex:1">
+                    <div style="font-weight:600">${d.clientName}</div>
+                    <div style="font-size:12px;color:var(--text-muted)">${Deals.getStageName(d.stage)} — ${Deals.formatMoney(d.quoteAmount || d.contractAmount || 0)}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function _doLink(emailId, dealId) {
+        // Find the lead from the current emailId context
+        let lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead) {
+            // Try to get from the modal context
+            const modal = document.getElementById('modal-link-email');
+            const allLeads = detectedLeads;
+            lead = allLeads[allLeads.length - 1]; // fallback
+        }
+        if (!lead) return;
+
+        const noteText = `📧 Courriel rattaché de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`;
+        await Deals.addNote(dealId, noteText);
+        const deal = Deals.getById(dealId);
+        App.showToast(`Courriel rattaché au deal de ${deal?.clientName || dealId}`, 'success');
+        document.getElementById('modal-link-email')?.classList.add('hidden');
+        dismiss(lead.id);
     }
 
     async function addNoteFromEmail(emailId) {
@@ -509,6 +595,9 @@ const EmailScanner = (() => {
         openExistingDeal,
         addNoteFromEmail,
         showAllMatches,
+        linkToExistingDeal,
+        _filterLinkDeals,
+        _doLink,
         dismiss,
         getDetectedLeads: () => detectedLeads,
     };

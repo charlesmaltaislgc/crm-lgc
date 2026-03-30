@@ -94,6 +94,15 @@ const App = (() => {
         // Init email templates
         initEmailTemplates();
 
+        // Load SAV data
+        SAV.loadTickets();
+
+        // Update SAV badge
+        updateSAVBadge();
+
+        // Init chatbot
+        if (typeof Chatbot !== 'undefined') Chatbot.init();
+
         // Initial render
         renderCurrentView();
         Alerts.refresh();
@@ -146,6 +155,8 @@ const App = (() => {
             clients: 'Clients',
             installations: 'Installations',
             plans: 'Lecteur de plans IA',
+            sav: 'Service après-vente',
+            directory: 'Répertoire des contacts',
             settings: 'Paramètres',
         };
         document.getElementById('page-title').textContent = titles[view] || view;
@@ -187,6 +198,12 @@ const App = (() => {
                 break;
             case 'plans':
                 PlanReader.renderUI();
+                break;
+            case 'sav':
+                SAV.render();
+                break;
+            case 'directory':
+                Directory.render();
                 break;
         }
     }
@@ -1543,8 +1560,28 @@ const App = (() => {
         return d;
     }
 
+    // ===== SAV BADGE =====
+    function updateSAVBadge() {
+        const badge = document.getElementById('badge-sav');
+        if (badge && typeof SAV !== 'undefined') {
+            const stats = SAV.getStats();
+            if (stats.open > 0) {
+                badge.textContent = stats.open;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+    }
+
     // ===== EMAIL SIGNATURE =====
-    const LOGO_URL = (window.location.origin + window.location.pathname).replace(/\/+$/, '') + '/assets/logo.png';
+    // Build absolute URL to logo, works on both localhost and Azure
+    const LOGO_URL = (() => {
+        const base = window.location.origin + window.location.pathname;
+        // Remove trailing filename if any (e.g., index.html)
+        const dir = base.endsWith('/') ? base : base.substring(0, base.lastIndexOf('/') + 1);
+        return dir + 'assets/logo.png';
+    })();
 
     function getEmailSignature(vendorName, vendorEmail) {
         const sigSettings = JSON.parse(localStorage.getItem('crm_emailSignature') || '{}');
