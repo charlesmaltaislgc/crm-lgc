@@ -33,16 +33,16 @@ const Auth = (() => {
 
     // Équipe LGC
     const demoUsers = [
-        { id: 'charles',  name: 'Charles Maltais',     email: 'charles.maltais@pflgc.com', emails: ['charles.maltais@pflgc.com','soumission@pflgc.com','lgc@pflgc.com'], role: 'directeur',    initials: 'CM' },
-        { id: 'olivier',  name: 'Olivier Maltais',     email: 'olivier.maltais@pflgc.com',  role: 'directeur',    initials: 'OM' },
-        { id: 'keven',    name: 'Keven Gaudreault',    email: 'keven.gaudreault@pflgc.com', role: 'directeur',    initials: 'KG' },
-        { id: 'sabra',    name: 'Sabra Msellem',       email: 'sabra@pflgc.com',            emails: ['sabra@pflgc.com','comptabilite@pflgc.com'], role: 'directeur', initials: 'SM' },
-        { id: 'sylvain',  name: 'Sylvain Fillion',     email: 'sylvain.fillion@pflgc.com',  role: 'vendeur',      initials: 'SF' },
-        { id: 'fabien',   name: 'Fabien Duchossoy',    email: 'fabien@pflgc.com',           role: 'vendeur',      initials: 'FD' },
-        { id: 'claude',   name: 'Claude Amiot',        email: 'claude.amiot@pflgc.com',     role: 'vendeur',      initials: 'CA' },
-        { id: 'nathalie', name: 'Nathalie Tremblay',   email: 'nathalie.tremblay@pflgc.com',role: 'vendeur',      initials: 'NT' },
-        { id: 'alain',    name: 'Alain Verreault',     email: 'alain.verreault@pflgc.com',  role: 'directeur_usine', initials: 'AV' },
-        { id: 'noel',     name: 'Noël',                email: 'reception@pflgc.com',        role: 'reception',    initials: 'NO' },
+        { id: 'charles',  name: 'Charles Maltais',     email: 'charles.maltais@pflgc.com', emails: ['charles.maltais@pflgc.com','soumission@pflgc.com','lgc@pflgc.com'], role: 'directeur',    initials: 'CM', phone: '(418) 832-0330 p.221', phone2: '' },
+        { id: 'olivier',  name: 'Olivier Maltais',     email: 'olivier.maltais@pflgc.com',  role: 'directeur',    initials: 'OM', phone: '(418) 832-0330 p.222', phone2: '' },
+        { id: 'keven',    name: 'Keven Gaudreault',    email: 'keven.gaudreault@pflgc.com', role: 'directeur',    initials: 'KG', phone: '(418) 832-0330 p.223', phone2: '' },
+        { id: 'sabra',    name: 'Sabra Msellem',       email: 'sabra@pflgc.com',            emails: ['sabra@pflgc.com','comptabilite@pflgc.com'], role: 'directeur', initials: 'SM', phone: '(418) 832-0330 p.224', phone2: '' },
+        { id: 'sylvain',  name: 'Sylvain Fillion',     email: 'sylvain.fillion@pflgc.com',  role: 'vendeur',      initials: 'SF', phone: '(418) 832-0330 p.225', phone2: '' },
+        { id: 'fabien',   name: 'Fabien Duchossoy',    email: 'fabien@pflgc.com',           role: 'vendeur',      initials: 'FD', phone: '(418) 832-0330 p.226', phone2: '' },
+        { id: 'claude',   name: 'Claude Amiot',        email: 'claude.amiot@pflgc.com',     role: 'vendeur',      initials: 'CA', phone: '(418) 832-0330 p.227', phone2: '' },
+        { id: 'nathalie', name: 'Nathalie Tremblay',   email: 'nathalie.tremblay@pflgc.com',role: 'vendeur',      initials: 'NT', phone: '(418) 832-0330 p.228', phone2: '' },
+        { id: 'alain',    name: 'Alain Verreault',     email: 'alain.verreault@pflgc.com',  role: 'directeur_usine', initials: 'AV', phone: '(418) 832-0330 p.230', phone2: '' },
+        { id: 'noel',     name: 'Noël',                email: 'reception@pflgc.com',        role: 'reception',    initials: 'NO', phone: '(418) 832-0330 p.0', phone2: '' },
     ];
 
     async function init() {

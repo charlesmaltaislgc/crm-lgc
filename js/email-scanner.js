@@ -408,12 +408,15 @@ const EmailScanner = (() => {
                                     ${lead.allMatches.length} deals liés
                                 </button>
                             ` : ''}
+                            <button class="btn btn-sm btn-outline" onclick="EmailScanner.linkToExistingDeal('${lead.id}')">
+                                🔗 Autre deal
+                            </button>
                         ` : `
                             <button class="btn btn-sm btn-primary" onclick="EmailScanner.createDealFromEmail('${lead.id}')">
                                 Créer deal
                             </button>
                             <button class="btn btn-sm btn-outline" onclick="EmailScanner.linkToExistingDeal('${lead.id}')">
-                                Rattacher à un lead
+                                🔗 Rattacher à un deal
                             </button>
                         `}
                         <button class="btn btn-sm btn-outline" onclick="EmailScanner.dismiss('${lead.id}')">
@@ -452,6 +455,8 @@ const EmailScanner = (() => {
             document.body.appendChild(modal);
         }
 
+        // Store emailId on the modal so _filterLinkDeals can access it
+        modal.dataset.emailId = emailId;
         modal.innerHTML = `
             <div class="modal-overlay" onclick="document.getElementById('modal-link-email').classList.add('hidden')"></div>
             <div class="modal-content" style="z-index:2;max-width:500px">
@@ -487,8 +492,11 @@ const EmailScanner = (() => {
             : allDeals.slice(0, 20);
         const list = document.getElementById('link-deal-list');
         if (!list) return;
+        // Get emailId from modal's data attribute (stored in linkToExistingDeal)
+        const modal = document.getElementById('modal-link-email');
+        const emailId = modal?.dataset.emailId || '';
         list.innerHTML = filtered.map(d => `
-            <div class="dir-card" style="margin-bottom:4px;cursor:pointer" onclick="EmailScanner._doLink('${list.closest('.modal')?.id ? '' : ''}','${d.id}')">
+            <div class="dir-card" style="margin-bottom:4px;cursor:pointer" onclick="EmailScanner._doLink('${emailId}','${d.id}')">
                 <div style="flex:1">
                     <div style="font-weight:600">${d.clientName}</div>
                     <div style="font-size:12px;color:var(--text-muted)">${Deals.getStageName(d.stage)} — ${Deals.formatMoney(d.quoteAmount || d.contractAmount || 0)}</div>

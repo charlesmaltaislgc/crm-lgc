@@ -339,19 +339,24 @@ const Graph = (() => {
 
     // Calendar
     async function createEvent(subject, start, end, attendees = []) {
-        const event = {
-            subject,
-            start: { dateTime: start, timeZone: 'Eastern Standard Time' },
-            end: { dateTime: end, timeZone: 'Eastern Standard Time' },
-            attendees: attendees.map(a => ({
-                emailAddress: { address: a },
-                type: 'required'
-            }))
-        };
-        return await graphFetch('/me/events', {
-            method: 'POST',
-            body: JSON.stringify(event)
-        });
+        try {
+            const event = {
+                subject,
+                start: { dateTime: start, timeZone: 'Eastern Standard Time' },
+                end: { dateTime: end, timeZone: 'Eastern Standard Time' },
+                attendees: attendees.map(a => ({
+                    emailAddress: { address: a },
+                    type: 'required'
+                }))
+            };
+            return await graphFetch('/me/events', {
+                method: 'POST',
+                body: JSON.stringify(event)
+            });
+        } catch (e) {
+            console.error('Failed to create calendar event:', e);
+            throw e;
+        }
     }
 
     // Calendar view

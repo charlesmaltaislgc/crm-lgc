@@ -587,11 +587,16 @@ Portes et Fenêtres LGC`;
 
         try {
             const body = buildEmailBody(message);
-            const emailAtt = att?.dataUrl ? [{
-                name: att.name,
-                contentType: 'application/pdf',
-                contentBytes: att.dataUrl.split(',')[1],
-            }] : [];
+            const emailAtt = [];
+            if (att?.dataUrl && att.dataUrl.includes(',')) {
+                emailAtt.push({
+                    name: att.name,
+                    contentType: 'application/pdf',
+                    contentBytes: att.dataUrl.split(',')[1],
+                });
+            } else if (att) {
+                App.showToast('Fichier joint invalide — envoi sans pièce jointe', 'warning');
+            }
             await Graph.sendEmail(to, subject, body, cc || null, emailAtt);
             App.showToast('Courriel envoyé avec le contrat en PJ!', 'success');
             document.getElementById('modal-send-contract').classList.add('hidden');
