@@ -361,6 +361,32 @@ const ImportExport = (() => {
                             <div id="avantage-progress" style="display:none;margin-top:12px;"></div>
                             <div id="avantage-result" style="display:none;margin-top:12px;"></div>
                         </div>
+
+                        <div style="background:linear-gradient(135deg,#dbeafe,#bfdbfe);border:1px solid #3b82f6;border-radius:8px;padding:16px;margin-top:16px;">
+                            <h4 style="margin:0 0 8px;font-size:0.95rem;">🔧 Importer depuis Mec-inov</h4>
+                            <p style="margin:0 0 12px;font-size:0.8rem;color:#1e40af;">
+                                Importez les 379 clients de votre base Mec-inov (Clients.mdb) avec emails, téléphones, adresses et # client.
+                            </p>
+                            <div id="mecinov-dropzone"
+                                ondragover="event.preventDefault();this.style.borderColor='#3b82f6';this.style.background='#eff6ff';"
+                                ondragleave="this.style.borderColor='#60a5fa';this.style.background='#dbeafe';"
+                                ondrop="event.preventDefault();this.style.borderColor='#60a5fa';this.style.background='#dbeafe';ImportExport._handleMecinovDrop(event);"
+                                onclick="document.getElementById('mecinov-file-input').click();"
+                                style="border:2px dashed #60a5fa;border-radius:8px;padding:20px 12px;text-align:center;cursor:pointer;background:#dbeafe;transition:.2s;">
+                                <div style="font-size:1.5rem;margin-bottom:4px;">🗄️</div>
+                                <p style="margin:0;font-weight:600;font-size:0.85rem;">Glissez le fichier Clients.mdb ici</p>
+                                <p style="margin:4px 0 0;color:#1e40af;font-size:0.75rem;">P:\\Mec-Inov\\Clients\\Clients.mdb</p>
+                            </div>
+                            <input type="file" id="mecinov-file-input" accept=".mdb" style="display:none;" onchange="ImportExport._handleMecinovFile(event)">
+                            <div style="margin-top:8px;text-align:center">
+                                <span style="font-size:12px;color:#64748b">— ou —</span>
+                            </div>
+                            <button class="btn btn-sm btn-primary" style="width:100%;margin-top:4px;" onclick="ImportExport._loadMecinovFromJSON()">
+                                📥 Charger automatiquement depuis le serveur
+                            </button>
+                            <div id="mecinov-progress" style="display:none;margin-top:12px;"></div>
+                            <div id="mecinov-result" style="display:none;margin-top:12px;"></div>
+                        </div>
                     </div>
 
                     <!-- EXPORT -->
@@ -888,8 +914,207 @@ const ImportExport = (() => {
         processBatch();
     }
 
-    // Store parsed avantage clients temporarily
+    // ===== MEC-INOV IMPORT =====
+
+    function _handleMecinovDrop(event) {
+        const files = event.dataTransfer?.files;
+        if (files && files.length > 0) _processMecinovMDB(files[0]);
+    }
+
+    function _handleMecinovFile(event) {
+        const files = event.target?.files;
+        if (files && files.length > 0) _processMecinovMDB(files[0]);
+    }
+
+    function _processMecinovMDB(file) {
+        // MDB parsing in browser is complex - redirect to JSON method
+        const progressEl = document.getElementById('mecinov-progress');
+        if (progressEl) {
+            progressEl.style.display = 'block';
+            progressEl.innerHTML = `
+                <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px;font-size:12px;color:#92400e;">
+                    ⚠️ Les fichiers .mdb ne peuvent pas être lus directement dans le navigateur.
+                    Utilisez le bouton <strong>"Charger automatiquement"</strong> ci-dessous, qui utilise le fichier pré-converti.
+                </div>
+            `;
+        }
+    }
+
+    function _loadMecinovFromJSON() {
+        const progressEl = document.getElementById('mecinov-progress');
+        const resultEl = document.getElementById('mecinov-result');
+        if (!progressEl || !resultEl) return;
+
+        progressEl.style.display = 'block';
+        resultEl.style.display = 'none';
+        progressEl.innerHTML = '<div style="text-align:center;padding:8px;font-size:13px;font-weight:600">⏳ Chargement des clients Mec-inov...</div>';
+
+        fetch('data/mecinov-clients.json')
+            .then(r => {
+                if (!r.ok) throw new Error('Fichier non trouvé (data/mecinov-clients.json)');
+                return r.json();
+            })
+            .then(clients => {
+                progressEl.style.display = 'none';
+                _showMecinovPreview(clients, resultEl);
+            })
+            .catch(err => {
+                progressEl.innerHTML = `<div style="color:red;font-size:13px;padding:8px">❌ ${err.message}</div>`;
+            });
+    }
+
+    function _showMecinovPreview(clients, resultEl) {
+        // Clean up data
+        const titleCase = (s) => (s || '').toLowerCase().replace(/(?:^|\s|[-'])\S/g, c => c.toUpperCase());
+
+        const cleaned = clients.filter(c => {
+            const name = (c.CNOM || c.CCOMPAGNIE || '').trim();
+            return name && name !== '' && !/^(COMPAGNIE TEST|CLIENT TEST)$/i.test(name);
+        }).map(c => ({
+            mecId: c.CMEC || '',
+            bbxId: c.CBBX || '',
+            company: titleCase(c.CCOMPAGNIE || ''),
+            name: titleCase(c.CNOM || ''),
+            address: [c.CADRESSE1, c.CADRESSE2, c.CADRESSE3, c.CCODEP].filter(Boolean).join(', ').replace(/Qu\ufffd?bec/g, 'Québec').replace(/L\ufffd?vis/g, 'Lévis'),
+            phone: c.TEL1 || '',
+            phone2: c.TEL2 || '',
+            fax: c.FAX1 || '',
+            email: c.CEMAIL || '',
+            type: c.CTYPEBBX || '',
+            terms: c.CTERMEBBX || '',
+            notes: c.NOTES || '',
+            created: c.CCREA || '',
+        }));
+
+        // Store for import
+        _mecinovClientsData = cleaned;
+
+        const sample = cleaned.slice(0, 8);
+        const withEmail = cleaned.filter(c => c.email).length;
+        const withPhone = cleaned.filter(c => c.phone).length;
+
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `
+            <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:12px;">
+                <div style="font-weight:700;color:#1d4ed8;font-size:14px;margin-bottom:4px">
+                    ✅ ${cleaned.length} clients Mec-inov chargés
+                </div>
+                <div style="font-size:12px;color:#1e40af;margin-bottom:12px">
+                    📧 ${withEmail} avec courriel &nbsp;|&nbsp; 📞 ${withPhone} avec téléphone
+                </div>
+                <div style="max-height:200px;overflow-y:auto;border:1px solid #bfdbfe;border-radius:6px;background:#fff">
+                    <table style="width:100%;font-size:11px;border-collapse:collapse">
+                        <thead>
+                            <tr style="background:#dbeafe;position:sticky;top:0">
+                                <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe"># Mec</th>
+                                <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe">Nom</th>
+                                <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe">Tél.</th>
+                                <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #bfdbfe">Courriel</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sample.map(c => `
+                                <tr>
+                                    <td style="padding:3px 6px;border-bottom:1px solid #eff6ff;font-family:monospace;font-size:10px">${c.mecId}</td>
+                                    <td style="padding:3px 6px;border-bottom:1px solid #eff6ff;font-weight:500">${c.name || c.company}</td>
+                                    <td style="padding:3px 6px;border-bottom:1px solid #eff6ff">${c.phone}</td>
+                                    <td style="padding:3px 6px;border-bottom:1px solid #eff6ff;font-size:10px">${c.email || '—'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+                    <button class="btn btn-sm btn-primary" id="btn-mecinov-import"
+                        onclick="ImportExport._runMecinovImport()">
+                        📥 Importer les ${cleaned.length} clients comme contacts
+                    </button>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+                        <input type="checkbox" id="mecinov-skip-existing" checked>
+                        Ignorer les doublons
+                    </label>
+                </div>
+            </div>
+        `;
+    }
+
+    function _runMecinovImport() {
+        const clients = _mecinovClientsData;
+        if (!clients || clients.length === 0) return;
+
+        const skipExisting = document.getElementById('mecinov-skip-existing')?.checked !== false;
+        const btn = document.getElementById('btn-mecinov-import');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Import en cours...'; }
+
+        const useContacts = typeof Contacts !== 'undefined';
+        let created = 0, skipped = 0, errors = 0;
+
+        const existingContacts = useContacts ? Contacts.getAll() : [];
+        const existingNames = new Set(existingContacts.map(c => (c.name || '').toLowerCase()));
+
+        let index = 0;
+        const batchSize = 100;
+
+        function processBatch() {
+            const end = Math.min(index + batchSize, clients.length);
+            for (let i = index; i < end; i++) {
+                const c = clients[i];
+                const contactName = c.name || c.company;
+                if (skipExisting && existingNames.has(contactName.toLowerCase())) {
+                    skipped++;
+                    continue;
+                }
+                try {
+                    if (useContacts) {
+                        Contacts.save({
+                            name: contactName,
+                            organization: c.company !== c.name ? c.company : '',
+                            type: c.type === 'Particulier' ? 'person' : (c.company && c.company !== c.name ? 'organization' : 'person'),
+                            phone: c.phone,
+                            phone2: c.phone2,
+                            email: c.email,
+                            address: c.address,
+                            source: 'mecinov',
+                            tags: ['Mec-inov'],
+                            notes: `# Mec-inov: ${c.mecId}${c.bbxId ? ' | Avantage: ' + c.bbxId : ''}${c.terms ? ' | Termes: ' + c.terms : ''}${c.notes ? '\n' + c.notes : ''}`,
+                            mecinovId: c.mecId,
+                            avantageId: c.bbxId || '',
+                        });
+                    }
+                    created++;
+                    existingNames.add(contactName.toLowerCase());
+                } catch (e) { errors++; }
+            }
+            index = end;
+            if (btn) btn.textContent = `⏳ ${index} / ${clients.length}...`;
+
+            if (index < clients.length) {
+                setTimeout(processBatch, 10);
+            } else {
+                if (btn) { btn.disabled = false; btn.textContent = '📥 Import terminé!'; }
+                const resultEl = document.getElementById('mecinov-result');
+                if (resultEl) {
+                    resultEl.style.display = 'block';
+                    resultEl.innerHTML = `
+                        <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:12px;margin-top:8px">
+                            <div style="font-weight:700;color:#1d4ed8;font-size:14px">🎉 Import Mec-inov terminé!</div>
+                            <div style="font-size:13px;margin-top:6px;color:#1e40af">
+                                ✅ <strong>${created}</strong> contacts créés<br>
+                                ${skipped > 0 ? `⏭️ ${skipped} doublons ignorés<br>` : ''}
+                                ${errors > 0 ? `❌ ${errors} erreurs<br>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+                App.showToast(`${created} clients Mec-inov importés!`, 'success');
+            }
+        }
+        processBatch();
+    }
+
+    // Store parsed clients temporarily
     let _avantageClientsData = null;
+    let _mecinovClientsData = null;
 
     // Public API
     const publicAPI = {
@@ -907,6 +1132,10 @@ const ImportExport = (() => {
         _handleAvantageDrop,
         _handleAvantageFile,
         _runAvantageImport,
+        _handleMecinovDrop,
+        _handleMecinovFile,
+        _loadMecinovFromJSON,
+        _runMecinovImport,
         get _avantageClients() { return _avantageClientsData; },
         set _avantageClients(v) { _avantageClientsData = v; },
     };
