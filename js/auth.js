@@ -33,16 +33,16 @@ const Auth = (() => {
 
     // Équipe LGC
     const demoUsers = [
-        { id: 'charles',  name: 'Charles Maltais',     email: 'charles.maltais@pflgc.com', emails: ['charles.maltais@pflgc.com','soumission@pflgc.com','lgc@pflgc.com'], role: 'directeur',    initials: 'CM', phone: '(418) 832-0330 p.221', phone2: '' },
-        { id: 'olivier',  name: 'Olivier Maltais',     email: 'olivier.maltais@pflgc.com',  role: 'directeur',    initials: 'OM', phone: '(418) 832-0330 p.222', phone2: '' },
-        { id: 'keven',    name: 'Keven Gaudreault',    email: 'keven.gaudreault@pflgc.com', role: 'directeur',    initials: 'KG', phone: '(418) 832-0330 p.223', phone2: '' },
-        { id: 'sabra',    name: 'Sabra Msellem',       email: 'sabra@pflgc.com',            emails: ['sabra@pflgc.com','comptabilite@pflgc.com'], role: 'directeur', initials: 'SM', phone: '(418) 832-0330 p.224', phone2: '' },
-        { id: 'sylvain',  name: 'Sylvain Fillion',     email: 'sylvain.fillion@pflgc.com',  role: 'vendeur',      initials: 'SF', phone: '(418) 832-0330 p.225', phone2: '' },
-        { id: 'fabien',   name: 'Fabien Duchossoy',    email: 'fabien@pflgc.com',           role: 'vendeur',      initials: 'FD', phone: '(418) 832-0330 p.226', phone2: '' },
-        { id: 'claude',   name: 'Claude Amiot',        email: 'claude.amiot@pflgc.com',     role: 'vendeur',      initials: 'CA', phone: '(418) 832-0330 p.227', phone2: '' },
-        { id: 'nathalie', name: 'Nathalie Tremblay',   email: 'nathalie.tremblay@pflgc.com',role: 'vendeur',      initials: 'NT', phone: '(418) 832-0330 p.228', phone2: '' },
-        { id: 'alain',    name: 'Alain Verreault',     email: 'alain.verreault@pflgc.com',  role: 'directeur_usine', initials: 'AV', phone: '(418) 832-0330 p.230', phone2: '' },
-        { id: 'noel',     name: 'Noël',                email: 'reception@pflgc.com',        role: 'reception',    initials: 'NO', phone: '(418) 832-0330 p.0', phone2: '' },
+        { id: 'charles',  name: 'Charles Maltais',     email: 'charles.maltais@pflgc.com', emails: ['charles.maltais@pflgc.com','soumission@pflgc.com','lgc@pflgc.com'], role: 'directeur',    initials: 'CM', phone: '(418) 549-7837 p.221', phone2: '(418) 590-9529' },
+        { id: 'olivier',  name: 'Olivier Maltais',     email: 'olivier.maltais@pflgc.com',  role: 'directeur',    initials: 'OM', phone: '(418) 549-7837 p.222', phone2: '' },
+        { id: 'keven',    name: 'Keven Gaudreault',    email: 'keven.gaudreault@pflgc.com', role: 'directeur',    initials: 'KG', phone: '(418) 549-7837 p.223', phone2: '' },
+        { id: 'sabra',    name: 'Sabra Msellem',       email: 'sabra@pflgc.com',            emails: ['sabra@pflgc.com','comptabilite@pflgc.com'], role: 'directeur', initials: 'SM', phone: '(418) 549-7837 p.224', phone2: '' },
+        { id: 'sylvain',  name: 'Sylvain Fillion',     email: 'sylvain.fillion@pflgc.com',  role: 'vendeur',      initials: 'SF', phone: '(418) 549-7837 p.225', phone2: '' },
+        { id: 'fabien',   name: 'Fabien Duchossoy',    email: 'fabien@pflgc.com',           role: 'vendeur',      initials: 'FD', phone: '(418) 549-7837 p.226', phone2: '' },
+        { id: 'claude',   name: 'Claude Amiot',        email: 'claude.amiot@pflgc.com',     role: 'vendeur',      initials: 'CA', phone: '(418) 549-7837 p.227', phone2: '' },
+        { id: 'nathalie', name: 'Nathalie Tremblay',   email: 'nathalie.tremblay@pflgc.com',role: 'vendeur',      initials: 'NT', phone: '(418) 549-7837 p.228', phone2: '' },
+        { id: 'alain',    name: 'Alain Verreault',     email: 'alain.verreault@pflgc.com',  role: 'directeur_usine', initials: 'AV', phone: '(418) 549-7837 p.230', phone2: '' },
+        { id: 'noel',     name: 'Noël',                email: 'reception@pflgc.com',        role: 'reception',    initials: 'NO', phone: '(418) 549-7837 p.0', phone2: '' },
     ];
 
     async function init() {
@@ -202,20 +202,31 @@ const Auth = (() => {
         return currentUser;
     }
 
-    function logout() {
+    async function logout() {
         if (msalInstance && !isDemo) {
-            // Clear ALL cached MSAL accounts so next login shows account picker
-            const accounts = msalInstance.getAllAccounts();
-            accounts.forEach(acc => {
-                msalInstance.setActiveAccount(null);
-            });
+            // Try proper MSAL logout (clears server-side session too)
+            try {
+                const account = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0];
+                if (account) {
+                    await msalInstance.logoutPopup({
+                        account: account,
+                        postLogoutRedirectUri: window.location.origin + window.location.pathname,
+                    });
+                }
+            } catch (e) {
+                console.warn('MSAL logoutPopup failed, clearing cache manually:', e);
+            }
+            // Clear ALL cached MSAL accounts
+            msalInstance.setActiveAccount(null);
             // Clear MSAL cache from localStorage
-            for (const key of Object.keys(localStorage)) {
+            const lsKeys = Object.keys(localStorage);
+            for (const key of lsKeys) {
                 if (key.startsWith('msal.') || key.includes('msal')) {
                     localStorage.removeItem(key);
                 }
             }
-            for (const key of Object.keys(sessionStorage)) {
+            const ssKeys = Object.keys(sessionStorage);
+            for (const key of ssKeys) {
                 if (key.startsWith('msal.') || key.includes('msal')) {
                     sessionStorage.removeItem(key);
                 }

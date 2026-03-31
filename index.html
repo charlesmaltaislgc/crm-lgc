@@ -508,25 +508,44 @@
                             <h3>✉️ Signature courriel</h3>
                             <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
                                 La signature est automatiquement ajoutée à chaque courriel envoyé depuis le CRM avec votre logo LGC.
+                                Chaque champ est modifiable — personnalisez votre signature comme vous voulez.
                             </p>
                             <div class="settings-form">
-                                <div class="form-group">
-                                    <label>Téléphone entreprise</label>
-                                    <input type="text" id="setting-sig-phone" class="input-sm" value="(418) 832-0330" placeholder="(418) 832-0330">
+                                <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                    <div class="form-group">
+                                        <label>Votre nom (affiché dans la signature)</label>
+                                        <input type="text" id="setting-sig-name" class="input-sm" placeholder="Charles Maltais">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Titre / Poste</label>
+                                        <input type="text" id="setting-sig-title" class="input-sm" placeholder="Directeur">
+                                    </div>
+                                </div>
+                                <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                    <div class="form-group">
+                                        <label>Téléphone entreprise</label>
+                                        <input type="text" id="setting-sig-phone" class="input-sm" value="(418) 549-7837" placeholder="(418) 549-7837">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Cellulaire / Ligne directe</label>
+                                        <input type="text" id="setting-sig-direct" class="input-sm" placeholder="(418) 590-9529">
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                     <label>Adresse</label>
-                                    <input type="text" id="setting-sig-address" class="input-sm" value="1015, boul. Pierre-Bertrand, Québec, QC G1M 3K7">
+                                    <input type="text" id="setting-sig-address" class="input-sm" value="1292, boul. Saint-Paul, Chicoutimi, QC G7J 3C5">
                                 </div>
-                                <div class="form-group">
-                                    <label>Site web</label>
-                                    <input type="text" id="setting-sig-website" class="input-sm" value="www.pflgc.com">
+                                <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                    <div class="form-group">
+                                        <label>Site web</label>
+                                        <input type="text" id="setting-sig-website" class="input-sm" value="www.pflgc.com">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>URL du logo (vide = logo LGC par défaut)</label>
+                                        <input type="text" id="setting-sig-logo" class="input-sm" placeholder="https://...logo.png">
+                                    </div>
                                 </div>
-                                <div class="form-group">
-                                    <label>URL du logo (laisser vide pour logo LGC par défaut)</label>
-                                    <input type="text" id="setting-sig-logo" class="input-sm" placeholder="https://...logo.png">
-                                </div>
-                                <button id="btn-save-signature" class="btn btn-sm btn-primary">Sauvegarder la signature</button>
+                                <button id="btn-save-signature" class="btn btn-sm btn-primary">💾 Sauvegarder la signature</button>
                                 <div id="sig-preview" style="margin-top:16px;padding:16px;background:white;border:1px solid var(--border);border-radius:var(--radius)"></div>
                             </div>
                         </div>

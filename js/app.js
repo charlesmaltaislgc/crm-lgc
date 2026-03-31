@@ -45,7 +45,7 @@ const App = (() => {
                     <img src="assets/logo.png" style="height:60px;margin-bottom:24px" alt="LGC">
                     <h1 style="color:#B22234;font-size:24px">Lien invalide ou expiré</h1>
                     <p style="color:#64748b;margin-top:12px">Ce lien de signature n'est pas valide. Contactez Portes et Fenêtres LGC pour obtenir un nouveau lien.</p>
-                    <p style="margin-top:24px"><a href="tel:4188320330" style="color:#B22234;font-weight:600">📞 (418) 832-0330</a></p>
+                    <p style="margin-top:24px"><a href="tel:4188320330" style="color:#B22234;font-weight:600">📞 (418) 549-7837</a></p>
                 </div>`;
             return;
         }
@@ -103,7 +103,7 @@ const App = (() => {
 
                         <p style="text-align:center;font-size:11px;color:#94a3b8;margin-top:16px">
                             En signant, vous acceptez les conditions du contrat.<br>
-                            Portes et Fenêtres LGC — (418) 832-0330 — pflgc.com
+                            Portes et Fenêtres LGC — (418) 549-7837 — pflgc.com
                         </p>
                     </div>
                 </div>
@@ -187,7 +187,7 @@ const App = (() => {
                     3. Commande des matériaux<br>
                     4. Planification de l'installation
                 </div>
-                <p style="margin-top:24px"><a href="tel:4188320330" style="color:#B22234;font-weight:600;text-decoration:none">📞 (418) 832-0330</a> | <a href="https://www.pflgc.com" style="color:#B22234;text-decoration:none">pflgc.com</a></p>
+                <p style="margin-top:24px"><a href="tel:4188320330" style="color:#B22234;font-weight:600;text-decoration:none">📞 (418) 549-7837</a> | <a href="https://www.pflgc.com" style="color:#B22234;text-decoration:none">pflgc.com</a></p>
             </div>`;
     }
 
@@ -970,12 +970,19 @@ const App = (() => {
 
     function loadSignatureSettings() {
         const sig = JSON.parse(localStorage.getItem('crm_emailSignature') || '{}');
+        const user = Auth.getUser();
+        const elName = document.getElementById('setting-sig-name');
+        const elTitle = document.getElementById('setting-sig-title');
         const elPhone = document.getElementById('setting-sig-phone');
+        const elDirect = document.getElementById('setting-sig-direct');
         const elAddr = document.getElementById('setting-sig-address');
         const elWeb = document.getElementById('setting-sig-website');
         const elLogo = document.getElementById('setting-sig-logo');
-        if (elPhone) elPhone.value = sig.phone || '(418) 832-0330';
-        if (elAddr) elAddr.value = sig.address || '1015, boul. Pierre-Bertrand, Québec, QC G1M 3K7';
+        if (elName) elName.value = sig.name || user?.name || '';
+        if (elTitle) elTitle.value = sig.title || '';
+        if (elPhone) elPhone.value = sig.phone || '(418) 549-7837';
+        if (elDirect) elDirect.value = sig.direct || '';
+        if (elAddr) elAddr.value = sig.address || '1292, boul. Saint-Paul, Chicoutimi, QC G7J 3C5';
         if (elWeb) elWeb.value = sig.website || 'www.pflgc.com';
         if (elLogo) elLogo.value = sig.logoUrl || '';
 
@@ -985,7 +992,10 @@ const App = (() => {
 
     function saveSignatureSettings() {
         const sig = {
-            phone: document.getElementById('setting-sig-phone')?.value || '(418) 832-0330',
+            name: document.getElementById('setting-sig-name')?.value || '',
+            title: document.getElementById('setting-sig-title')?.value || '',
+            phone: document.getElementById('setting-sig-phone')?.value || '(418) 549-7837',
+            direct: document.getElementById('setting-sig-direct')?.value || '',
             address: document.getElementById('setting-sig-address')?.value || '',
             website: document.getElementById('setting-sig-website')?.value || 'www.pflgc.com',
             logoUrl: document.getElementById('setting-sig-logo')?.value || '',
@@ -1761,8 +1771,11 @@ const App = (() => {
 
     function getEmailSignature(vendorName, vendorEmail) {
         const sigSettings = JSON.parse(localStorage.getItem('crm_emailSignature') || '{}');
-        const phone = sigSettings.phone || '(418) 832-0330';
-        const address = sigSettings.address || '1015, boul. Pierre-Bertrand, Québec, QC G1M 3K7';
+        const displayName = sigSettings.name || vendorName || '';
+        const displayTitle = sigSettings.title || '';
+        const phone = sigSettings.phone || '(418) 549-7837';
+        const direct = sigSettings.direct || '';
+        const address = sigSettings.address || '1292, boul. Saint-Paul, Chicoutimi, QC G7J 3C5';
         const website = sigSettings.website || 'www.pflgc.com';
         const logoUrl = sigSettings.logoUrl || LOGO_URL;
 
@@ -1773,9 +1786,9 @@ const App = (() => {
       <img src="${logoUrl}" alt="Portes et Fenêtres LGC" style="width:120px;height:auto" />
     </td>
     <td style="vertical-align:top;line-height:1.5">
-      <strong style="font-size:14px;color:#c0392b">${vendorName || ''}</strong><br>
+      <strong style="font-size:14px;color:#c0392b">${displayName}</strong>${displayTitle ? `<br><span style="color:#888;font-size:12px">${displayTitle}</span>` : ''}<br>
       <span style="color:#666">${vendorEmail ? vendorEmail + '<br>' : ''}Portes et Fenêtres LGC</span><br>
-      <span style="color:#666">📞 ${phone}</span><br>
+      <span style="color:#666">📞 ${phone}</span>${direct ? `<br><span style="color:#666">📱 ${direct}</span>` : ''}<br>
       <span style="color:#666">📍 ${address}</span><br>
       <a href="https://${website}" style="color:#c0392b;text-decoration:none">🌐 ${website}</a>
     </td>
@@ -1898,7 +1911,7 @@ const App = (() => {
                         '{clientName}': deal.clientName || '',
                         '{amount}': Deals.formatMoney(deal.quoteAmount || deal.contractAmount || 0),
                         '{vendorName}': vendor.name || '',
-                        '{companyPhone}': '(418) 832-0330',
+                        '{companyPhone}': '(418) 549-7837',
                     };
                     let body = tpl.body;
                     let subject = tpl.subject;
@@ -2036,6 +2049,11 @@ const App = (() => {
         });
 
         document.getElementById('btn-demo').addEventListener('click', () => {
+            const pwd = prompt('Mot de passe pour le mode essai:');
+            if (pwd !== 'pflgc') {
+                showToast('Mot de passe incorrect', 'error');
+                return;
+            }
             const user = Auth.loginDemo();
             showApp(user);
         });
@@ -2233,9 +2251,9 @@ const App = (() => {
         document.getElementById('btn-add-member')?.addEventListener('click', addTeamMember);
 
         // Logout
-        document.getElementById('btn-logout')?.addEventListener('click', () => {
+        document.getElementById('btn-logout')?.addEventListener('click', async () => {
             if (confirm('Se déconnecter du CRM?')) {
-                Auth.logout();
+                await Auth.logout();
                 window.location.reload();
             }
         });
