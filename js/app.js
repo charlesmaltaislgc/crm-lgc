@@ -2010,12 +2010,120 @@ const App = (() => {
         const templates = getEmailTemplates();
         const container = document.getElementById('email-templates-list');
         if (!container) return;
-        container.innerHTML = templates.map(tpl => `
-            <div class="email-template-card">
-                <span class="email-template-name">${tpl.name}</span>
-                <span style="font-size:11px;color:var(--text-muted)">${tpl.subject}</span>
+
+        container.innerHTML = templates.map((tpl, idx) => `
+            <div class="email-template-card" style="background:var(--bg-card,#fff);border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:12px 16px;margin-bottom:8px;cursor:pointer;transition:all .15s"
+                 onclick="App._editTemplate('${tpl.id}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border,#e2e8f0)'">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <div style="font-weight:600;font-size:14px">${tpl.name}</div>
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Sujet: ${tpl.subject}</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px">${(tpl.body || '').substring(0, 80)}...</div>
+                    </div>
+                    <div style="display:flex;gap:6px;flex-shrink:0">
+                        <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();App._editTemplate('${tpl.id}')" title="Modifier">✏️</button>
+                        <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:transparent" onclick="event.stopPropagation();App._deleteTemplate('${tpl.id}')" title="Supprimer">🗑️</button>
+                    </div>
+                </div>
             </div>
         `).join('');
+
+        container.innerHTML += `
+            <button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="App._editTemplate(null)">+ Nouveau modèle</button>
+            <button class="btn btn-sm btn-outline" style="margin-top:8px;margin-left:8px" onclick="if(confirm('Réinitialiser les modèles par défaut?')){localStorage.removeItem('crm_emailTemplates');App.showEmailTemplatesManager();App.showToast('Modèles réinitialisés','success')}">🔄 Réinitialiser</button>
+        `;
+    }
+
+    function _editTemplate(tplId) {
+        const templates = getEmailTemplates();
+        const tpl = tplId ? templates.find(t => t.id === tplId) : { id: '', name: '', subject: '', body: '' };
+        if (!tpl) return;
+
+        let modal = document.getElementById('modal-edit-template');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'modal-edit-template';
+            modal.className = 'modal';
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="document.getElementById('modal-edit-template').classList.add('hidden')"></div>
+            <div class="modal-content" style="z-index:1;max-width:600px">
+                <div class="modal-header">
+                    <h3>${tplId ? '✏️ Modifier le modèle' : '➕ Nouveau modèle'}</h3>
+                    <button class="modal-close" onclick="document.getElementById('modal-edit-template').classList.add('hidden')">&times;</button>
+                </div>
+                <div class="modal-body" style="padding:20px">
+                    <div style="margin-bottom:16px">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:13px">Nom du modèle</label>
+                        <input type="text" id="tpl-edit-name" class="input-sm" style="width:100%" value="${tpl.name}" placeholder="Ex: Relance soumission">
+                    </div>
+                    <div style="margin-bottom:16px">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:13px">Sujet du courriel</label>
+                        <input type="text" id="tpl-edit-subject" class="input-sm" style="width:100%" value="${tpl.subject}" placeholder="Ex: Suivi de votre soumission - LGC">
+                    </div>
+                    <div style="margin-bottom:12px">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:13px">Corps du message</label>
+                        <textarea id="tpl-edit-body" rows="10" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px;line-height:1.5">${tpl.body}</textarea>
+                    </div>
+                    <div style="background:var(--bg-secondary,#f7f8fa);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-muted)">
+                        <strong>Variables disponibles :</strong><br>
+                        <code>{clientName}</code> — Nom du client &nbsp;|&nbsp;
+                        <code>{amount}</code> — Montant &nbsp;|&nbsp;
+                        <code>{vendorName}</code> — Nom du vendeur &nbsp;|&nbsp;
+                        <code>{companyPhone}</code> — Téléphone LGC
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding:12px 20px;display:flex;justify-content:flex-end;gap:8px">
+                    <button class="btn btn-outline" onclick="document.getElementById('modal-edit-template').classList.add('hidden')">Annuler</button>
+                    <button class="btn btn-primary" id="btn-save-template">💾 Sauvegarder</button>
+                </div>
+            </div>
+        `;
+
+        modal.classList.remove('hidden');
+
+        document.getElementById('btn-save-template').onclick = () => {
+            const name = document.getElementById('tpl-edit-name').value.trim();
+            const subject = document.getElementById('tpl-edit-subject').value.trim();
+            const body = document.getElementById('tpl-edit-body').value;
+
+            if (!name || !subject) {
+                showToast('Le nom et le sujet sont requis', 'error');
+                return;
+            }
+
+            const allTemplates = getEmailTemplates();
+            if (tplId) {
+                const idx = allTemplates.findIndex(t => t.id === tplId);
+                if (idx >= 0) {
+                    allTemplates[idx].name = name;
+                    allTemplates[idx].subject = subject;
+                    allTemplates[idx].body = body;
+                }
+            } else {
+                allTemplates.push({
+                    id: 'tpl_' + Date.now(),
+                    name,
+                    subject,
+                    body,
+                });
+            }
+
+            localStorage.setItem('crm_emailTemplates', JSON.stringify(allTemplates));
+            modal.classList.add('hidden');
+            showEmailTemplatesManager();
+            showToast(tplId ? 'Modèle modifié' : 'Modèle créé', 'success');
+        };
+    }
+
+    function _deleteTemplate(tplId) {
+        if (!confirm('Supprimer ce modèle de courriel?')) return;
+        const templates = getEmailTemplates().filter(t => t.id !== tplId);
+        localStorage.setItem('crm_emailTemplates', JSON.stringify(templates));
+        showEmailTemplatesManager();
+        showToast('Modèle supprimé', 'success');
     }
 
     // ===== DARK MODE =====
@@ -2703,6 +2811,8 @@ const App = (() => {
         renderM365Status,
         triggerConfetti,
         showEmailTemplatesManager,
+        _editTemplate,
+        _deleteTemplate,
         _handleExternalSign,
         get _editingDealId() { return editingDealId; },
     };

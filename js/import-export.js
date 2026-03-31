@@ -334,11 +334,33 @@ const ImportExport = (() => {
                             <p style="margin:0;font-weight:600;font-size:0.95rem;">Glissez un fichier CSV ici</p>
                             <p style="margin:4px 0 0;color:#94a3b8;font-size:0.8rem;">ou cliquez pour sélectionner</p>
                         </div>
-                        <input type="file" id="import-file-input" accept=".csv,.txt" style="display:none;" onchange="ImportExport._handleFileSelect(event)">
+                        <input type="file" id="import-file-input" accept=".csv,.txt,.xls,.xlsx" style="display:none;" onchange="ImportExport._handleFileSelect(event)">
 
                         <div id="import-preview" style="margin-top:16px;display:none;"></div>
                         <div id="import-mapping" style="margin-top:16px;display:none;"></div>
                         <div id="import-result" style="margin-top:16px;display:none;"></div>
+
+                        <hr style="margin:20px 0;border:none;border-top:1px solid #e2e8f0">
+
+                        <div style="background:linear-gradient(135deg,#fef3c7,#fde68a);border:1px solid #f59e0b;border-radius:8px;padding:16px;">
+                            <h4 style="margin:0 0 8px;font-size:0.95rem;">🏢 Importer depuis Acceo Avantage</h4>
+                            <p style="margin:0 0 12px;font-size:0.8rem;color:#92400e;">
+                                Importez votre liste de clients depuis le fichier Excel exporté d'Avantage (format multi-lignes, 4 lignes/client).
+                            </p>
+                            <div id="avantage-dropzone"
+                                ondragover="event.preventDefault();this.style.borderColor='#f59e0b';this.style.background='#fefce8';"
+                                ondragleave="this.style.borderColor='#fbbf24';this.style.background='#fffbeb';"
+                                ondrop="event.preventDefault();this.style.borderColor='#fbbf24';this.style.background='#fffbeb';ImportExport._handleAvantageDrop(event);"
+                                onclick="document.getElementById('avantage-file-input').click();"
+                                style="border:2px dashed #fbbf24;border-radius:8px;padding:20px 12px;text-align:center;cursor:pointer;background:#fffbeb;transition:.2s;">
+                                <div style="font-size:1.5rem;margin-bottom:4px;">📊</div>
+                                <p style="margin:0;font-weight:600;font-size:0.85rem;">Glissez le fichier .XLS / .XLSX ici</p>
+                                <p style="margin:4px 0 0;color:#92400e;font-size:0.75rem;">Liste générale des clients.XLS</p>
+                            </div>
+                            <input type="file" id="avantage-file-input" accept=".xls,.xlsx" style="display:none;" onchange="ImportExport._handleAvantageFile(event)">
+                            <div id="avantage-progress" style="display:none;margin-top:12px;"></div>
+                            <div id="avantage-result" style="display:none;margin-top:12px;"></div>
+                        </div>
                     </div>
 
                     <!-- EXPORT -->
@@ -566,7 +588,311 @@ const ImportExport = (() => {
         exportContacts({});
     }
 
-    return {
+    // ===== ACCEO AVANTAGE IMPORT =====
+
+    function _handleAvantageDrop(event) {
+        const files = event.dataTransfer?.files;
+        if (files && files.length > 0) _processAvantageFile(files[0]);
+    }
+
+    function _handleAvantageFile(event) {
+        const files = event.target?.files;
+        if (files && files.length > 0) _processAvantageFile(files[0]);
+    }
+
+    function _processAvantageFile(file) {
+        const progressEl = document.getElementById('avantage-progress');
+        const resultEl = document.getElementById('avantage-result');
+        if (!progressEl || !resultEl) return;
+
+        progressEl.style.display = 'block';
+        resultEl.style.display = 'none';
+        progressEl.innerHTML = `<div style="text-align:center;padding:12px;"><div style="font-size:1.5rem;animation:spin 1s linear infinite">⏳</div><p style="margin:4px 0 0;font-size:13px;font-weight:600">Lecture du fichier... (${(file.size / 1024 / 1024).toFixed(1)} MB)</p></div>`;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                progressEl.innerHTML = '<div style="text-align:center;padding:8px;font-size:13px;font-weight:600">⚙️ Traitement des données Avantage...</div>';
+
+                // Use SheetJS if available, otherwise parse raw
+                if (typeof XLSX !== 'undefined') {
+                    const wb = XLSX.read(e.target.result, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                    _parseAvantageRows(rows, progressEl, resultEl);
+                } else {
+                    // Load SheetJS dynamically
+                    progressEl.innerHTML = '<div style="text-align:center;padding:8px;font-size:13px">📦 Chargement de la librairie Excel...</div>';
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+                    script.onload = () => {
+                        const wb = XLSX.read(e.target.result, { type: 'array' });
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                        _parseAvantageRows(rows, progressEl, resultEl);
+                    };
+                    script.onerror = () => {
+                        progressEl.innerHTML = '<div style="color:red;font-size:13px">❌ Impossible de charger la librairie Excel. Vérifiez votre connexion.</div>';
+                    };
+                    document.head.appendChild(script);
+                }
+            } catch (err) {
+                progressEl.innerHTML = `<div style="color:red;font-size:13px">❌ Erreur: ${err.message}</div>`;
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function _parseAvantageRows(rows, progressEl, resultEl) {
+        // Avantage format: 4 rows per client + blank separator
+        // Row 1: client#, Name, Street address, Tel.1
+        // Row 2: (cont), (empty), City/Province/Postal, Fax
+        // Row 3: (cont), (empty), Country, Tel.2
+        // Row 4: (cont), (empty), (empty), Cell.
+
+        const clients = [];
+        let headerSkip = 0;
+
+        // Find first data row (skip headers - look for first row starting with digits)
+        for (let i = 0; i < Math.min(rows.length, 20); i++) {
+            const val = String(rows[i]?.[0] || '').replace(/\x00/g, '').trim();
+            if (/^\d{5,}/.test(val)) {
+                headerSkip = i;
+                break;
+            }
+        }
+
+        // Clean cell values - remove null chars
+        const clean = (v) => String(v || '').replace(/\x00/g, '').trim();
+
+        let i = headerSkip;
+        while (i < rows.length - 3) {
+            const r1 = rows[i];
+            const r2 = rows[i + 1];
+            const r3 = rows[i + 2];
+            const r4 = rows[i + 3];
+
+            const numero = clean(r1?.[0]);
+            const name = clean(r1?.[1]);
+
+            // Skip blank or non-data rows
+            if (!numero || !/\d/.test(numero)) {
+                i++;
+                continue;
+            }
+
+            const street = clean(r1?.[2]);
+            const cityLine = clean(r2?.[2]);
+            const country = clean(r3?.[2]);
+
+            const tel1 = clean(r1?.[3]);
+            const fax = clean(r2?.[3]);
+            const tel2 = clean(r3?.[3]);
+            const cell = clean(r4?.[3]);
+
+            // Build full address
+            let address = street;
+            if (cityLine) address += (address ? ', ' : '') + cityLine;
+
+            // Parse name into first/last
+            const nameParts = name.split(/\s+/);
+            let lastName = '', firstName = '';
+            if (nameParts.length >= 2) {
+                lastName = nameParts[0];
+                firstName = nameParts.slice(1).join(' ');
+            } else {
+                lastName = name;
+            }
+
+            // Format name nicely (Title Case)
+            const titleCase = (s) => s.toLowerCase().replace(/(?:^|\s|[-'])\S/g, c => c.toUpperCase());
+
+            clients.push({
+                numero: numero,
+                name: titleCase(name),
+                firstName: titleCase(firstName),
+                lastName: titleCase(lastName),
+                address: address,
+                phone: tel1 || tel2 || cell || '',
+                phone2: tel2 || '',
+                cell: cell || '',
+                fax: fax || '',
+            });
+
+            // Jump to next client block (4 rows + possible blank)
+            i += 4;
+            // Skip blank separator rows
+            while (i < rows.length && !clean(rows[i]?.[0]) && !clean(rows[i]?.[1])) {
+                i++;
+            }
+        }
+
+        progressEl.style.display = 'none';
+        resultEl.style.display = 'block';
+
+        if (clients.length === 0) {
+            resultEl.innerHTML = '<div style="color:red;padding:8px;font-size:13px">❌ Aucun client trouvé dans le fichier. Vérifiez le format.</div>';
+            return;
+        }
+
+        // Show preview + import button
+        const sample = clients.slice(0, 8);
+        resultEl.innerHTML = `
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;">
+                <div style="font-weight:700;color:#15803d;font-size:14px;margin-bottom:8px">
+                    ✅ ${clients.length.toLocaleString()} clients détectés dans Avantage
+                </div>
+                <div style="font-size:12px;color:#166534;margin-bottom:12px">
+                    Aperçu (${sample.length} premiers) :
+                </div>
+                <div style="max-height:200px;overflow-y:auto;border:1px solid #d1fae5;border-radius:6px;background:#fff">
+                    <table style="width:100%;font-size:11px;border-collapse:collapse">
+                        <thead>
+                            <tr style="background:#ecfdf5;position:sticky;top:0">
+                                <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #d1fae5">#</th>
+                                <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #d1fae5">Nom</th>
+                                <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #d1fae5">Adresse</th>
+                                <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #d1fae5">Tél.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sample.map(c => `
+                                <tr>
+                                    <td style="padding:3px 8px;border-bottom:1px solid #f0fdf4;font-family:monospace;font-size:10px">${c.numero}</td>
+                                    <td style="padding:3px 8px;border-bottom:1px solid #f0fdf4;font-weight:500">${c.name}</td>
+                                    <td style="padding:3px 8px;border-bottom:1px solid #f0fdf4">${c.address.substring(0, 50)}</td>
+                                    <td style="padding:3px 8px;border-bottom:1px solid #f0fdf4">${c.phone}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+                    <button class="btn btn-sm btn-primary" id="btn-avantage-import"
+                        onclick="ImportExport._runAvantageImport()">
+                        📥 Importer les ${clients.length.toLocaleString()} clients comme contacts
+                    </button>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+                        <input type="checkbox" id="avantage-skip-existing" checked>
+                        Ignorer les doublons
+                    </label>
+                </div>
+            </div>
+        `;
+
+        // Store parsed data for import
+        ImportExport._avantageClients = clients;
+    }
+
+    function _runAvantageImport() {
+        const clients = ImportExport._avantageClients;
+        if (!clients || clients.length === 0) return;
+
+        const skipExisting = document.getElementById('avantage-skip-existing')?.checked !== false;
+        const btn = document.getElementById('btn-avantage-import');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Import en cours...'; }
+
+        // Use Contacts module if available
+        const useContacts = typeof Contacts !== 'undefined';
+        let created = 0, skipped = 0, errors = 0;
+
+        const existingContacts = useContacts ? Contacts.getAll() : [];
+        const existingNames = new Set(existingContacts.map(c => (c.name || '').toLowerCase()));
+
+        // Process in chunks to avoid blocking UI
+        let index = 0;
+        const batchSize = 200;
+
+        function processBatch() {
+            const end = Math.min(index + batchSize, clients.length);
+
+            for (let i = index; i < end; i++) {
+                const c = clients[i];
+
+                // Skip duplicates by name
+                if (skipExisting && existingNames.has(c.name.toLowerCase())) {
+                    skipped++;
+                    continue;
+                }
+
+                try {
+                    if (useContacts) {
+                        Contacts.save({
+                            name: c.name,
+                            type: 'person',
+                            phone: c.phone,
+                            phone2: c.cell || c.phone2 || '',
+                            address: c.address,
+                            source: 'avantage',
+                            tags: ['Avantage'],
+                            notes: `# Avantage ${c.numero}${c.fax ? ' | Fax: ' + c.fax : ''}`,
+                            avantageId: c.numero,
+                        });
+                    } else {
+                        // Fallback: save directly to localStorage
+                        const contacts = JSON.parse(localStorage.getItem('crm_contacts') || '[]');
+                        contacts.push({
+                            id: 'av_' + c.numero,
+                            name: c.name,
+                            type: 'person',
+                            phone: c.phone,
+                            phone2: c.cell || c.phone2 || '',
+                            address: c.address,
+                            source: 'avantage',
+                            tags: ['Avantage'],
+                            notes: `# Avantage ${c.numero}`,
+                            avantageId: c.numero,
+                            createdAt: new Date().toISOString(),
+                        });
+                        localStorage.setItem('crm_contacts', JSON.stringify(contacts));
+                    }
+                    created++;
+                    existingNames.add(c.name.toLowerCase());
+                } catch (e) {
+                    errors++;
+                }
+            }
+
+            index = end;
+
+            // Update progress
+            if (btn) btn.textContent = `⏳ ${index.toLocaleString()} / ${clients.length.toLocaleString()}...`;
+
+            if (index < clients.length) {
+                setTimeout(processBatch, 10); // Yield to UI
+            } else {
+                // Done!
+                if (btn) { btn.disabled = false; btn.textContent = '📥 Import terminé!'; }
+
+                const resultEl = document.getElementById('avantage-result');
+                if (resultEl) {
+                    resultEl.style.display = 'block';
+                    resultEl.innerHTML = `
+                        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin-top:8px">
+                            <div style="font-weight:700;color:#15803d;font-size:14px">
+                                🎉 Import Avantage terminé!
+                            </div>
+                            <div style="font-size:13px;margin-top:6px;color:#166534">
+                                ✅ <strong>${created.toLocaleString()}</strong> contacts créés<br>
+                                ${skipped > 0 ? `⏭️ ${skipped.toLocaleString()} doublons ignorés<br>` : ''}
+                                ${errors > 0 ? `❌ ${errors} erreurs<br>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                App.showToast(`${created.toLocaleString()} clients Avantage importés!`, 'success');
+            }
+        }
+
+        processBatch();
+    }
+
+    // Store parsed avantage clients temporarily
+    let _avantageClientsData = null;
+
+    // Public API
+    const publicAPI = {
         render,
         exportDeals,
         exportContacts,
@@ -577,6 +903,13 @@ const ImportExport = (() => {
         _updateMapping,
         _runImport,
         _exportDeals,
-        _exportContacts
+        _exportContacts,
+        _handleAvantageDrop,
+        _handleAvantageFile,
+        _runAvantageImport,
+        get _avantageClients() { return _avantageClientsData; },
+        set _avantageClients(v) { _avantageClientsData = v; },
     };
+
+    return publicAPI;
 })();
