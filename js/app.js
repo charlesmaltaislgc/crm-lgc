@@ -272,6 +272,10 @@ const App = (() => {
         // Init chatbot
         if (typeof Chatbot !== 'undefined') Chatbot.init();
 
+        // Init new modules
+        if (typeof Activities !== 'undefined' && Activities.getOverdue) updateActivityBadge();
+        if (typeof Automations !== 'undefined' && Automations.startPeriodicCheck) Automations.startPeriodicCheck();
+
         // Initial render
         renderCurrentView();
         Alerts.refresh();
@@ -326,9 +330,14 @@ const App = (() => {
             plans: 'Lecteur de plans IA',
             sav: 'Service après-vente',
             directory: 'Répertoire des contacts',
+            contacts: 'Contacts',
+            activities: 'Activités',
+            automations: 'Automatisations',
+            'import-export': 'Import / Export',
             settings: 'Paramètres',
         };
-        document.getElementById('page-title').textContent = titles[view] || view;
+        const pageTitleEl = document.getElementById('page-title');
+        if (pageTitleEl) pageTitleEl.textContent = titles[view] || view;
 
         renderCurrentView();
     }
@@ -373,6 +382,21 @@ const App = (() => {
                 break;
             case 'directory':
                 Directory.render();
+                break;
+            case 'contacts':
+                if (typeof Contacts !== 'undefined') Contacts.render();
+                break;
+            case 'activities':
+                if (typeof Activities !== 'undefined') Activities.render();
+                break;
+            case 'automations':
+                if (typeof Automations !== 'undefined') Automations.render();
+                break;
+            case 'import-export':
+                if (typeof ImportExport !== 'undefined') ImportExport.render();
+                break;
+            case 'settings':
+                if (typeof CustomFields !== 'undefined') CustomFields.render();
                 break;
         }
     }
@@ -532,6 +556,7 @@ const App = (() => {
             'lastFollowUp', 'followUpDueDate',
             'contractSignDate', 'depositDate', 'supplierOrderDate',
             'measurementDate', 'installDate', 'completedDate',
+            'probability',
         ];
 
         fields.forEach(field => {
@@ -540,6 +565,14 @@ const App = (() => {
                 input.value = deal[field] || '';
             }
         });
+
+        // Update probability display
+        const probInput = document.getElementById('deal-probability');
+        const probValue = document.getElementById('deal-probability-value');
+        if (probInput) {
+            probInput.value = deal.probability || 50;
+            if (probValue) probValue.textContent = (deal.probability || 50) + '%';
+        }
 
         // Show/hide lost button
         const lostBtn = document.getElementById('btn-deal-lost');
@@ -563,6 +596,9 @@ const App = (() => {
 
         // Notes
         renderDealNotes(dealId);
+
+        // Timeline
+        renderDealTimeline(dealId);
 
         // Attachments
         renderAttachments(dealId);
@@ -644,6 +680,8 @@ const App = (() => {
             if (key === 'newNote') continue;
             if (key === 'stage') {
                 data[key] = parseInt(value, 10) || 1;
+            } else if (key === 'probability') {
+                data[key] = value ? parseInt(value, 10) : 50;
             } else if (key === 'quoteAmount' || key === 'contractAmount' || key === 'depositRequired') {
                 data[key] = value ? parseFloat(value) : 0;
             } else {
@@ -2159,14 +2197,39 @@ const App = (() => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('[data-pipeline-view]').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                Pipeline.setView(btn.dataset.pipelineView);
+                const view = btn.dataset.pipelineView;
+                const kanbanEl = document.getElementById('kanban-board');
+                const listEl = document.getElementById('list-view');
+                const forecastEl = document.getElementById('forecast-view');
+                if (view === 'forecast') {
+                    if (kanbanEl) kanbanEl.classList.add('hidden');
+                    if (listEl) listEl.classList.add('hidden');
+                    if (forecastEl) forecastEl.classList.remove('hidden');
+                    renderForecast();
+                } else {
+                    if (forecastEl) forecastEl.classList.add('hidden');
+                    Pipeline.setView(view);
+                }
             });
         });
 
-        // Search
+        // Search - enhanced with dropdown
         document.getElementById('global-search')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
+                document.getElementById('search-results-dropdown')?.classList.add('hidden');
                 handleSearch(e.target.value);
+            }
+            if (e.key === 'Escape') {
+                document.getElementById('search-results-dropdown')?.classList.add('hidden');
+            }
+        });
+        document.getElementById('global-search')?.addEventListener('input', (e) => {
+            handleEnhancedSearch(e.target.value);
+        });
+        // Close search dropdown on click outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-box')) {
+                document.getElementById('search-results-dropdown')?.classList.add('hidden');
             }
         });
 
@@ -2370,6 +2433,233 @@ const App = (() => {
         }
     }
 
+    // ===== ACTIVITY BADGE =====
+    function updateActivityBadge() {
+        const badge = document.getElementById('badge-activities');
+        if (!badge) return;
+        try {
+            const overdue = (typeof Activities !== 'undefined' && Activities.getOverdue) ? Activities.getOverdue() : [];
+            if (overdue.length > 0) {
+                badge.textContent = overdue.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        } catch (e) {
+            badge.classList.add('hidden');
+        }
+    }
+
+    // ===== FORECAST VIEW =====
+    function renderForecast() {
+        const container = document.getElementById('forecast-view');
+        if (!container) return;
+
+        const allDeals = Deals.getAll().filter(d => d.status === 'active');
+        const now = new Date();
+        const months = [];
+        for (let i = 0; i < 4; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+            months.push({
+                key: d.toISOString().slice(0, 7),
+                label: d.toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' }),
+                deals: [],
+                weightedTotal: 0
+            });
+        }
+
+        const stageColors = [
+            '#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899','#f43f5e','#ef4444',
+            '#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#14b8a6','#06b6d4'
+        ];
+
+        allDeals.forEach(deal => {
+            const closeDate = deal.expectedCloseDate || deal.installDate || deal.completedDate || '';
+            const dealMonth = closeDate ? closeDate.slice(0, 7) : now.toISOString().slice(0, 7);
+            const prob = (deal.probability || 50) / 100;
+            const amount = deal.contractAmount || deal.quoteAmount || 0;
+            const weighted = amount * prob;
+
+            const monthObj = months.find(m => m.key === dealMonth);
+            if (monthObj) {
+                monthObj.deals.push({ ...deal, weighted });
+                monthObj.weightedTotal += weighted;
+            } else if (dealMonth >= months[0].key) {
+                // Future beyond 4 months - add to last column
+                months[3].deals.push({ ...deal, weighted });
+                months[3].weightedTotal += weighted;
+            }
+        });
+
+        container.innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:16px 0">
+                ${months.map(m => `
+                    <div style="background:var(--bg-card,white);border-radius:var(--radius,8px);border:1px solid var(--border);overflow:hidden">
+                        <div style="padding:12px 16px;background:var(--primary-light,#fef2f2);border-bottom:1px solid var(--border)">
+                            <div style="font-weight:700;font-size:14px;text-transform:capitalize">${m.label}</div>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${m.deals.length} deal${m.deals.length !== 1 ? 's' : ''}</div>
+                            <div style="font-weight:700;font-size:18px;color:var(--primary);margin-top:4px">${Deals.formatMoney(m.weightedTotal)}</div>
+                            <div style="font-size:11px;color:var(--text-muted)">pondéré (montant x probabilité)</div>
+                        </div>
+                        <div style="padding:8px;max-height:300px;overflow-y:auto">
+                            ${m.deals.length === 0 ? '<div style="padding:12px;color:var(--text-muted);font-size:13px;text-align:center">Aucun deal</div>' :
+                            m.deals.map(d => `
+                                <div onclick="App.openDeal('${d.id}')" style="padding:8px 10px;border-radius:6px;border-left:3px solid ${stageColors[(d.stage || 1) - 1]};margin-bottom:6px;cursor:pointer;background:var(--bg,#f8fafc);font-size:13px" class="hover-lift">
+                                    <div style="font-weight:600">${d.clientName || 'Sans nom'}</div>
+                                    <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--text-muted);font-size:11px">
+                                        <span>${Deals.formatMoney(d.contractAmount || d.quoteAmount || 0)}</span>
+                                        <span>${d.probability || 50}%</span>
+                                    </div>
+                                    <div style="font-size:11px;color:var(--text-muted)">${Deals.getStageName(d.stage)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    // ===== ENHANCED SEARCH =====
+    function handleEnhancedSearch(query) {
+        const dropdown = document.getElementById('search-results-dropdown');
+        if (!dropdown) return handleSearch(query);
+
+        if (!query || query.length < 2) {
+            dropdown.classList.add('hidden');
+            return;
+        }
+
+        const q = query.toLowerCase();
+        const results = [];
+
+        // Search deals
+        Deals.getAll().forEach(d => {
+            if ((d.clientName || '').toLowerCase().includes(q) ||
+                (d.description || '').toLowerCase().includes(q) ||
+                (d.clientPhone || '').includes(q) ||
+                (d.clientEmail || '').toLowerCase().includes(q) ||
+                (d.mecinovQuoteNum || '').toLowerCase().includes(q)) {
+                results.push({ type: 'deal', label: d.clientName, sub: Deals.getStageName(d.stage) + ' - ' + Deals.formatMoney(d.quoteAmount || 0), id: d.id });
+            }
+        });
+
+        // Search contacts
+        if (typeof Contacts !== 'undefined' && Contacts.getAll) {
+            try {
+                Contacts.getAll().forEach(c => {
+                    if ((c.name || '').toLowerCase().includes(q) ||
+                        (c.email || '').toLowerCase().includes(q) ||
+                        (c.phone || '').includes(q) ||
+                        (c.organization || '').toLowerCase().includes(q)) {
+                        results.push({ type: 'contact', label: c.name, sub: c.organization || c.email || '', id: c.id });
+                    }
+                });
+            } catch (e) {}
+        }
+
+        // Search activities
+        if (typeof Activities !== 'undefined' && Activities.getAll) {
+            try {
+                Activities.getAll().forEach(a => {
+                    if ((a.subject || '').toLowerCase().includes(q)) {
+                        results.push({ type: 'activity', label: a.subject, sub: a.type || '', id: a.id });
+                    }
+                });
+            } catch (e) {}
+        }
+
+        if (results.length === 0) {
+            dropdown.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;text-align:center">Aucun résultat</div>';
+            dropdown.classList.remove('hidden');
+            return;
+        }
+
+        const typeLabels = { deal: '📋 Deals', contact: '👤 Contacts', activity: '📌 Activités' };
+        const grouped = {};
+        results.forEach(r => {
+            if (!grouped[r.type]) grouped[r.type] = [];
+            grouped[r.type].push(r);
+        });
+
+        let html = '';
+        Object.entries(grouped).forEach(([type, items]) => {
+            html += `<div style="padding:6px 12px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;background:var(--bg,#f8fafc)">${typeLabels[type] || type}</div>`;
+            items.slice(0, 5).forEach(item => {
+                html += `<div class="search-result-item" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px"
+                    onmouseover="this.style.background='var(--primary-light,#fef2f2)'"
+                    onmouseout="this.style.background=''"
+                    onclick="document.getElementById('search-results-dropdown').classList.add('hidden');${
+                        type === 'deal' ? `App.openDeal('${item.id}')` :
+                        type === 'contact' ? `App.navigate('contacts')` :
+                        `App.navigate('activities')`
+                    }">
+                    <div style="font-weight:600">${item.label}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${item.sub}</div>
+                </div>`;
+            });
+        });
+
+        dropdown.innerHTML = html;
+        dropdown.classList.remove('hidden');
+    }
+
+    // ===== DEAL TIMELINE (Unified) =====
+    function renderDealTimeline(dealId) {
+        const container = document.getElementById('deal-timeline-unified');
+        if (!container) return;
+
+        const items = [];
+
+        // Notes from the deal
+        const notes = Deals.getNotesForDeal(dealId);
+        notes.forEach(n => {
+            items.push({
+                date: n.noteDate,
+                icon: n.noteIcon || '📝',
+                type: n.noteType || 'note',
+                text: n.noteText,
+                author: n.author
+            });
+        });
+
+        // Activities from Activities module
+        if (typeof Activities !== 'undefined' && Activities.getForDeal) {
+            try {
+                const acts = Activities.getForDeal(dealId);
+                acts.forEach(a => {
+                    items.push({
+                        date: a.date || a.createdAt,
+                        icon: a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '📅' : '📌',
+                        type: 'activity',
+                        text: a.subject || a.description || 'Activité',
+                        author: a.assignedTo || 'Système'
+                    });
+                });
+            } catch (e) {}
+        }
+
+        // Sort by date descending
+        items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+        if (items.length === 0) {
+            container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px 0;text-align:center">Aucun historique pour ce deal</div>';
+            return;
+        }
+
+        container.innerHTML = `<div class="activity-timeline">` + items.map(item => `
+            <div class="timeline-entry type-${item.type}" style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+                <span style="font-size:16px;flex-shrink:0">${item.icon}</span>
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:13px">${item.text}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+                        ${item.author || ''} ${item.date ? '- ' + Deals.formatDate(item.date) : ''}
+                    </div>
+                </div>
+            </div>
+        `).join('') + `</div>`;
+    }
+
     // Get deadline status for pipeline cards
     function getDeadlineStatus(deal) {
         if (!deal.quoteDueDate || deal.quoteSentDate) return null;
@@ -2391,6 +2681,10 @@ const App = (() => {
         showToast,
         addActivity,
         handleSearch,
+        handleEnhancedSearch,
+        updateActivityBadge,
+        renderForecast,
+        renderDealTimeline,
         downloadAttachment,
         deleteAttachment,
         removePendingFile,

@@ -78,6 +78,15 @@
                     <span class="nav-text">Courriels / Leads</span>
                     <span class="badge badge-info hidden" id="badge-emails">0</span>
                 </a></li>
+                <li><a href="#" data-view="contacts" class="nav-link">
+                    <span class="nav-icon">👤</span>
+                    <span class="nav-text">Contacts</span>
+                </a></li>
+                <li><a href="#" data-view="activities" class="nav-link">
+                    <span class="nav-icon">📋</span>
+                    <span class="nav-text">Activités</span>
+                    <span class="badge badge-warning hidden" id="badge-activities">0</span>
+                </a></li>
                 <li><a href="#" data-view="contracts" class="nav-link">
                     <span class="nav-icon">✍️</span>
                     <span class="nav-text">Contrats</span>
@@ -104,6 +113,14 @@
                 <li><a href="#" data-view="directory" class="nav-link">
                     <span class="nav-icon">📇</span>
                     <span class="nav-text">Répertoire</span>
+                </a></li>
+                <li><a href="#" data-view="automations" class="nav-link">
+                    <span class="nav-icon">⚡</span>
+                    <span class="nav-text">Automatisations</span>
+                </a></li>
+                <li><a href="#" data-view="import-export" class="nav-link">
+                    <span class="nav-icon">📥</span>
+                    <span class="nav-text">Import / Export</span>
                 </a></li>
                 <li><a href="#" data-view="team" class="nav-link director-only">
                     <span class="nav-icon">👥</span>
@@ -132,9 +149,10 @@
                     <h2 id="page-title">Tableau de bord</h2>
                 </div>
                 <div class="topbar-right">
-                    <div class="search-box">
+                    <div class="search-box" style="position:relative">
                         <input type="text" id="global-search" placeholder="Rechercher client, téléphone, deal..." autocomplete="off">
                         <span class="search-icon">🔍</span>
+                        <div id="search-results-dropdown" class="hidden" style="position:absolute;top:100%;left:0;right:0;background:var(--bg-card,white);border:1px solid var(--border);border-radius:var(--radius,8px);box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:400px;overflow-y:auto;z-index:999"></div>
                     </div>
                     <button id="btn-new-deal" class="btn btn-primary btn-save-animated">🚀 Nouveau deal</button>
                     <button id="btn-notifications" class="btn btn-icon" title="Notifications">
@@ -226,6 +244,7 @@
                         <div class="pipeline-view-toggle">
                             <button class="btn btn-sm active" data-pipeline-view="kanban">Kanban</button>
                             <button class="btn btn-sm" data-pipeline-view="list">Liste</button>
+                            <button class="btn btn-sm" data-pipeline-view="forecast">Prévision</button>
                         </div>
                     </div>
                     <div id="kanban-board" class="kanban-board">
@@ -233,6 +252,9 @@
                     </div>
                     <div id="list-view" class="list-view hidden">
                         <!-- Populated by pipeline.js -->
+                    </div>
+                    <div id="forecast-view" class="forecast-view hidden">
+                        <!-- Populated by app.js renderForecast() -->
                     </div>
                 </section>
 
@@ -427,6 +449,26 @@
                     </div>
                 </section>
 
+                <!-- CONTACTS VIEW -->
+                <section id="view-contacts" class="view">
+                    <div id="contacts-content"></div>
+                </section>
+
+                <!-- ACTIVITIES VIEW -->
+                <section id="view-activities" class="view">
+                    <div id="activities-content"></div>
+                </section>
+
+                <!-- AUTOMATIONS VIEW -->
+                <section id="view-automations" class="view">
+                    <div id="automations-content"></div>
+                </section>
+
+                <!-- IMPORT/EXPORT VIEW -->
+                <section id="view-import-export" class="view">
+                    <div id="import-export-content"></div>
+                </section>
+
                 <!-- SETTINGS VIEW -->
                 <section id="view-settings" class="view">
                     <div class="settings-sections">
@@ -560,6 +602,13 @@
                             <button class="btn btn-sm btn-outline" style="margin-top:12px" onclick="App.showEmailTemplatesManager()">Gerer les modeles</button>
                         </div>
                         <div class="settings-section">
+                            <h3>🔧 Champs personnalisés</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                                Ajoutez des champs personnalisés aux deals, contacts et activités.
+                            </p>
+                            <div id="custom-fields-settings"></div>
+                        </div>
+                        <div class="settings-section">
                             <h3>Apparence</h3>
                             <div class="settings-form">
                                 <div class="form-group">
@@ -680,6 +729,7 @@
                         <button type="button" class="form-tab" data-form-tab="dates">Dates</button>
                         <button type="button" class="form-tab" data-form-tab="fichiers">Fichiers</button>
                         <button type="button" class="form-tab" data-form-tab="notes">Notes</button>
+                        <button type="button" class="form-tab" data-form-tab="timeline">Timeline</button>
                     </div>
 
                     <!-- Tab: Client -->
@@ -791,6 +841,11 @@
                                     <!-- Populated by JS -->
                                 </select>
                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Probabilité de clôture (%)</label>
+                            <input type="range" name="probability" id="deal-probability" min="0" max="100" step="5" value="50" class="input-sm" style="width:100%" oninput="document.getElementById('deal-probability-value').textContent=this.value+'%'">
+                            <div style="text-align:center;font-weight:700" id="deal-probability-value">50%</div>
                         </div>
                     </div>
 
@@ -942,6 +997,13 @@
                         <div class="form-group">
                             <label>Ajouter une note</label>
                             <textarea name="newNote" rows="3" placeholder="Tapez votre note ici..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Timeline -->
+                    <div class="form-tab-content" data-form-tab-content="timeline">
+                        <div id="deal-timeline-unified" style="max-height:400px;overflow-y:auto">
+                            <div style="color:var(--text-muted);font-size:13px;padding:12px 0">Chargement de la timeline...</div>
                         </div>
                     </div>
                 </form>
@@ -1291,6 +1353,11 @@
     <script src="js/sav.js"></script>
     <script src="js/directory.js"></script>
     <script src="js/chatbot.js"></script>
+    <script src="js/contacts.js"></script>
+    <script src="js/activities.js"></script>
+    <script src="js/automations.js"></script>
+    <script src="js/import-export.js"></script>
+    <script src="js/custom-fields.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
