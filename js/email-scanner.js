@@ -40,6 +40,28 @@ const EmailScanner = (() => {
 
     let detectedLeads = [];
     let scanning = false;
+    const DISMISSED_KEY = 'crm_dismissed_emails';
+    const PROCESSED_KEY = 'crm_processed_emails';
+
+    // Persistence: track dismissed and processed emails
+    function getDismissed() {
+        try { return JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]'); } catch { return []; }
+    }
+    function saveDismissed(list) {
+        // Keep last 500 dismissed email IDs
+        localStorage.setItem(DISMISSED_KEY, JSON.stringify(list.slice(-500)));
+    }
+    function getProcessed() {
+        try { return JSON.parse(localStorage.getItem(PROCESSED_KEY) || '[]'); } catch { return []; }
+    }
+    function saveProcessed(list) {
+        localStorage.setItem(PROCESSED_KEY, JSON.stringify(list.slice(-500)));
+    }
+    function markProcessed(emailId, action, detail) {
+        const processed = getProcessed();
+        processed.push({ id: emailId, action, detail, date: new Date().toISOString() });
+        saveProcessed(processed);
+    }
 
     // ===== CLIENT MATCHING =====
     // Check if the email sender matches an existing client in the CRM
@@ -110,6 +132,11 @@ const EmailScanner = (() => {
         detectedLeads = [];
         updateUI('scanning');
 
+        // Load dismissed + processed lists to skip already-handled emails
+        const dismissed = getDismissed();
+        const processed = getProcessed();
+        const handledIds = new Set([...dismissed, ...processed.map(p => p.id)]);
+
         try {
             let emails;
             if (Auth.isDemoMode()) {
@@ -144,8 +171,12 @@ const EmailScanner = (() => {
             }
 
             for (const email of emails) {
+                const emailId = email.id || 'E' + Math.random().toString(36).substr(2, 9);
                 const fromEmail = (email.from?.emailAddress?.address || email.fromEmail || '').toLowerCase();
                 const fromName = email.from?.emailAddress?.name || email.fromName || 'Inconnu';
+
+                // === FILTER 0: Skip already dismissed/processed emails ===
+                if (handledIds.has(emailId)) continue;
 
                 // === FILTER 1: Skip internal/system senders ===
                 if (isExcludedSender(fromEmail, fromName)) continue;
@@ -161,7 +192,7 @@ const EmailScanner = (() => {
                 const bestMatch = existingMatches.length > 0 ? existingMatches[0] : null;
 
                 detectedLeads.push({
-                    id: email.id || 'E' + Math.random().toString(36).substr(2, 9),
+                    id: emailId,
                     from: fromName,
                     fromEmail: fromEmail,
                     subject: email.subject || '',
@@ -328,12 +359,16 @@ const EmailScanner = (() => {
         // Count existing vs new
         const existingCount = detectedLeads.filter(l => l.existingDeal).length;
         const newCount = detectedLeads.length - existingCount;
+        const processedCount = getProcessed().length;
+        const dismissedCount = getDismissed().length;
 
         let html = `
-            <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--bg);border-radius:var(--radius);font-size:13px">
-                <span><strong>${detectedLeads.length}</strong> courriels détectés</span>
+            <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--bg);border-radius:var(--radius);font-size:13px;flex-wrap:wrap;align-items:center">
+                <span><strong>${detectedLeads.length}</strong> courriels à traiter</span>
                 ${existingCount > 0 ? `<span style="color:var(--info)">📋 <strong>${existingCount}</strong> clients existants</span>` : ''}
-                ${newCount > 0 ? `<span style="color:var(--success)">🆕 <strong>${newCount}</strong> nouveaux leads potentiels</span>` : ''}
+                ${newCount > 0 ? `<span style="color:var(--success)">🆕 <strong>${newCount}</strong> nouveaux leads</span>` : ''}
+                <span style="color:var(--text-muted)">✅ ${processedCount} traités | 🚫 ${dismissedCount} ignorés</span>
+                ${processedCount + dismissedCount > 0 ? `<button class="btn btn-sm btn-outline" onclick="EmailScanner.resetHistory()" style="margin-left:auto" title="Réinitialiser pour revoir les courriels déjà traités">🔄 Réinitialiser</button>` : ''}
             </div>
         `;
 
@@ -476,6 +511,7 @@ const EmailScanner = (() => {
         const noteText = `📧 Courriel rattaché de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`;
         await Deals.addNote(dealId, noteText);
         const deal = Deals.getById(dealId);
+        markProcessed(lead.id, 'linked_to_deal', deal?.clientName || dealId);
         App.showToast(`Courriel rattaché au deal de ${deal?.clientName || dealId}`, 'success');
         document.getElementById('modal-link-email')?.classList.add('hidden');
         dismiss(lead.id);
@@ -487,6 +523,7 @@ const EmailScanner = (() => {
 
         const noteText = `📧 Courriel reçu de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`;
         await Deals.addNote(lead.existingDeal.id, noteText);
+        markProcessed(emailId, 'note_added', lead.existingDeal.clientName);
         App.showToast(`Note ajoutée au deal de ${lead.existingDeal.clientName}`, 'success');
         dismiss(emailId);
     }
@@ -517,11 +554,18 @@ const EmailScanner = (() => {
         };
 
         App.openNewDeal(dealData);
+        markProcessed(emailId, 'deal_created', lead.from);
         dismiss(emailId);
         App.showToast('Deal pré-rempli depuis le courriel', 'info');
     }
 
     function dismiss(emailId) {
+        // Persist dismissal so this email won't reappear on next scan
+        const dismissed = getDismissed();
+        if (!dismissed.includes(emailId)) {
+            dismissed.push(emailId);
+            saveDismissed(dismissed);
+        }
         detectedLeads = detectedLeads.filter(l => l.id !== emailId);
         updateUI('results');
         updateBadge();
@@ -589,6 +633,14 @@ const EmailScanner = (() => {
         ];
     }
 
+    function resetHistory() {
+        if (confirm('Réinitialiser l\'historique des courriels traités? Les courriels déjà ignorés ou traités réapparaîtront au prochain scan.')) {
+            localStorage.removeItem(DISMISSED_KEY);
+            localStorage.removeItem(PROCESSED_KEY);
+            App.showToast('Historique réinitialisé. Relancez le scan.', 'info');
+        }
+    }
+
     return {
         scanEmails,
         createDealFromEmail,
@@ -599,6 +651,7 @@ const EmailScanner = (() => {
         _filterLinkDeals,
         _doLink,
         dismiss,
+        resetHistory,
         getDetectedLeads: () => detectedLeads,
     };
 })();

@@ -17,7 +17,35 @@ const Contracts = (() => {
         } else {
             contracts = await Graph.getListItems('CRM_Contracts') || [];
         }
+        // Check for externally signed contracts (signed via the standalone page)
+        checkForNewSignatures();
         return contracts;
+    }
+
+    function checkForNewSignatures() {
+        let changed = false;
+        contracts.forEach(contract => {
+            if (!contract.signed) {
+                // Re-read from localStorage in case the signing page updated it
+                const fresh = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+                const freshContract = fresh.find(c => c.signToken === contract.signToken);
+                if (freshContract?.signed) {
+                    contract.signed = true;
+                    contract.signDate = freshContract.signDate;
+                    contract.signerName = freshContract.signerName;
+                    contract.signatureImage = freshContract.signatureImage;
+                    contract.signerIP = freshContract.signerIP;
+                    changed = true;
+
+                    // Auto-update deal stage to "Contrat signé"
+                    const deal = Deals.getById(contract.dealId);
+                    if (deal && deal.stage === 8) {
+                        Deals.update(deal.id, { stage: 9, contractSignDate: new Date().toISOString().split('T')[0] });
+                    }
+                }
+            }
+        });
+        if (changed) saveLocal();
     }
 
     function saveLocal() {

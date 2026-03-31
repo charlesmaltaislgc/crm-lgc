@@ -10,6 +10,14 @@ const App = (() => {
 
     // ===== INITIALIZATION =====
     async function init() {
+        // Check if this is a contract signing page (standalone, no login required)
+        const urlParams = new URLSearchParams(window.location.search);
+        const signToken = urlParams.get('sign');
+        if (signToken) {
+            showSigningPage(signToken);
+            return;
+        }
+
         // Check for demo mode or M365 auth
         const user = await Auth.init();
 
@@ -20,6 +28,167 @@ const App = (() => {
         }
 
         setupEventListeners();
+    }
+
+    // ===== STANDALONE SIGNING PAGE =====
+    function showSigningPage(token) {
+        // Find contract by token
+        const contracts = JSON.parse(localStorage.getItem('crm_contracts') || '[]');
+        const contract = contracts.find(c => c.signToken === token);
+
+        document.body.innerHTML = '';
+        document.body.style.cssText = 'margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;min-height:100vh;display:flex;justify-content:center;padding:24px';
+
+        if (!contract) {
+            document.body.innerHTML = `
+                <div style="max-width:560px;width:100%;text-align:center;padding:60px 24px">
+                    <img src="assets/logo.png" style="height:60px;margin-bottom:24px" alt="LGC">
+                    <h1 style="color:#B22234;font-size:24px">Lien invalide ou expiré</h1>
+                    <p style="color:#64748b;margin-top:12px">Ce lien de signature n'est pas valide. Contactez Portes et Fenêtres LGC pour obtenir un nouveau lien.</p>
+                    <p style="margin-top:24px"><a href="tel:4188320330" style="color:#B22234;font-weight:600">📞 (418) 832-0330</a></p>
+                </div>`;
+            return;
+        }
+
+        if (contract.signed) {
+            document.body.innerHTML = `
+                <div style="max-width:560px;width:100%;text-align:center;padding:60px 24px">
+                    <img src="assets/logo.png" style="height:60px;margin-bottom:24px" alt="LGC">
+                    <h1 style="color:#10b981;font-size:24px">✅ Contrat déjà signé</h1>
+                    <p style="color:#64748b;margin-top:12px">Ce contrat a été signé le ${new Date(contract.signDate).toLocaleDateString('fr-CA')} par ${contract.signerName}.</p>
+                    <p style="margin-top:12px;color:#64748b">Merci de votre confiance!</p>
+                </div>`;
+            return;
+        }
+
+        document.body.innerHTML = `
+            <div style="max-width:640px;width:100%">
+                <div style="text-align:center;margin-bottom:24px">
+                    <img src="assets/logo.png" style="height:50px" alt="Portes et Fenêtres LGC">
+                </div>
+                <div style="background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.08);overflow:hidden">
+                    <div style="background:#B22234;color:white;padding:20px 24px">
+                        <h1 style="font-size:20px;margin:0">Contrat à signer</h1>
+                        <p style="opacity:.8;font-size:13px;margin:4px 0 0">Portes et Fenêtres LGC</p>
+                    </div>
+                    <div style="padding:24px">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;font-size:14px">
+                            <div><strong style="color:#64748b;font-size:11px;text-transform:uppercase">Client</strong><br>${contract.clientName}</div>
+                            <div><strong style="color:#64748b;font-size:11px;text-transform:uppercase">Montant</strong><br>${Number(contract.amount).toLocaleString('fr-CA', {style:'currency',currency:'CAD'})}</div>
+                            <div style="grid-column:1/-1"><strong style="color:#64748b;font-size:11px;text-transform:uppercase">Description</strong><br>${contract.description || 'Travaux de portes et fenêtres'}</div>
+                            ${contract.annexe ? `<div style="grid-column:1/-1"><strong style="color:#64748b;font-size:11px;text-transform:uppercase">Conditions particulières</strong><br>${contract.annexe}</div>` : ''}
+                        </div>
+
+                        <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
+
+                        <div style="margin-bottom:16px">
+                            <label style="display:block;font-size:12px;font-weight:600;color:#64748b;margin-bottom:4px;text-transform:uppercase">Nom complet du signataire *</label>
+                            <input type="text" id="ext-sign-name" value="${contract.clientName}" style="width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:8px;font-size:15px;box-sizing:border-box">
+                        </div>
+
+                        <div style="margin-bottom:16px">
+                            <label style="display:block;font-size:12px;font-weight:600;color:#64748b;margin-bottom:4px;text-transform:uppercase">Votre signature (dessinez avec le doigt ou la souris) *</label>
+                            <canvas id="ext-sign-canvas" width="560" height="160" style="border:2px solid #e2e8f0;border-radius:8px;cursor:crosshair;width:100%;background:white;touch-action:none"></canvas>
+                            <button onclick="document.getElementById('ext-sign-canvas').getContext('2d').clearRect(0,0,560,160)" style="margin-top:6px;background:none;border:1px solid #cbd5e1;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:12px;color:#64748b">Effacer</button>
+                        </div>
+
+                        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:20px;font-size:13px;color:#475569">
+                            <input type="checkbox" id="ext-sign-accept" style="margin-top:3px">
+                            <span>J'ai lu et j'accepte les termes de ce contrat. Je confirme que la signature ci-dessus est la mienne et qu'elle a la même valeur légale qu'une signature manuscrite.</span>
+                        </label>
+
+                        <button id="ext-sign-btn" onclick="App._handleExternalSign('${token}')" style="width:100%;padding:14px;background:#B22234;color:white;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer">
+                            ✍️ Signer le contrat
+                        </button>
+
+                        <p style="text-align:center;font-size:11px;color:#94a3b8;margin-top:16px">
+                            En signant, vous acceptez les conditions du contrat.<br>
+                            Portes et Fenêtres LGC — (418) 832-0330 — pflgc.com
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Init signature canvas
+        setTimeout(() => {
+            const canvas = document.getElementById('ext-sign-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            let drawing = false;
+
+            const getPos = (e) => {
+                const r = canvas.getBoundingClientRect();
+                const sx = canvas.width / r.width;
+                const sy = canvas.height / r.height;
+                const cx = e.touches ? e.touches[0].clientX : e.clientX;
+                const cy = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: (cx - r.left) * sx, y: (cy - r.top) * sy };
+            };
+            const start = (e) => { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+            const draw = (e) => { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+            const stop = () => { drawing = false; };
+
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stop);
+            canvas.addEventListener('mouseleave', stop);
+            canvas.addEventListener('touchstart', start, { passive: false });
+            canvas.addEventListener('touchmove', draw, { passive: false });
+            canvas.addEventListener('touchend', stop);
+        }, 50);
+    }
+
+    function _handleExternalSign(token) {
+        const name = document.getElementById('ext-sign-name')?.value?.trim();
+        const checkbox = document.getElementById('ext-sign-accept')?.checked;
+        const canvas = document.getElementById('ext-sign-canvas');
+
+        if (!name) { alert('Veuillez entrer votre nom complet.'); return; }
+        if (!checkbox) { alert('Veuillez accepter les termes du contrat.'); return; }
+
+        // Check signature not empty
+        const ctx = canvas?.getContext('2d');
+        const data = ctx?.getImageData(0, 0, canvas.width, canvas.height).data;
+        let hasSignature = false;
+        if (data) { for (let i = 3; i < data.length; i += 4) { if (data[i] > 0) { hasSignature = true; break; } } }
+        if (!hasSignature) { alert('Veuillez dessiner votre signature.'); return; }
+
+        const signatureImage = canvas.toDataURL('image/png');
+
+        // Save signature in localStorage
+        const contracts = JSON.parse(localStorage.getItem('crm_contracts') || '[]');
+        const idx = contracts.findIndex(c => c.signToken === token);
+        if (idx === -1) { alert('Contrat non trouvé.'); return; }
+
+        contracts[idx].signed = true;
+        contracts[idx].signDate = new Date().toISOString();
+        contracts[idx].signerName = name;
+        contracts[idx].signerIP = 'Web';
+        contracts[idx].signatureImage = signatureImage;
+        localStorage.setItem('crm_contracts', JSON.stringify(contracts));
+
+        // Show success
+        document.body.innerHTML = `
+            <div style="max-width:560px;width:100%;text-align:center;padding:60px 24px">
+                <img src="assets/logo.png" style="height:60px;margin-bottom:24px" alt="LGC">
+                <div style="font-size:60px;margin-bottom:16px">✅</div>
+                <h1 style="color:#10b981;font-size:28px">Contrat signé!</h1>
+                <p style="color:#64748b;margin-top:12px;font-size:16px">Merci ${name}!</p>
+                <p style="color:#64748b;margin-top:8px">Votre contrat a été signé avec succès le ${new Date().toLocaleDateString('fr-CA')} à ${new Date().toLocaleTimeString('fr-CA')}.</p>
+                <p style="color:#64748b;margin-top:16px">L'équipe de Portes et Fenêtres LGC vous contactera pour la suite des étapes.</p>
+                <div style="margin-top:32px;padding:16px;background:#f0fdf4;border-radius:8px;font-size:13px;color:#166534">
+                    <strong>Prochaines étapes:</strong><br>
+                    1. Confirmation de réception par courriel<br>
+                    2. Planification de la prise de mesures<br>
+                    3. Commande des matériaux<br>
+                    4. Planification de l'installation
+                </div>
+                <p style="margin-top:24px"><a href="tel:4188320330" style="color:#B22234;font-weight:600;text-decoration:none">📞 (418) 832-0330</a> | <a href="https://www.pflgc.com" style="color:#B22234;text-decoration:none">pflgc.com</a></p>
+            </div>`;
     }
 
     function showLogin() {
@@ -2202,6 +2371,7 @@ const App = (() => {
         renderM365Status,
         triggerConfetti,
         showEmailTemplatesManager,
+        _handleExternalSign,
         get _editingDealId() { return editingDealId; },
     };
 })();
