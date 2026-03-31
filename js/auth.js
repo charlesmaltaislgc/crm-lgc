@@ -57,11 +57,22 @@ const Auth = (() => {
                     currentUser = await getUserProfile(response.accessToken);
                     return currentUser;
                 }
-                // Check cached accounts
+                // Check cached accounts — auto-login only if ONE account cached
                 const accounts = msalInstance.getAllAccounts();
-                if (accounts.length > 0) {
+                if (accounts.length === 1) {
                     msalInstance.setActiveAccount(accounts[0]);
                     return await silentLogin();
+                } else if (accounts.length > 1) {
+                    // Multiple accounts cached — don't auto-pick, let user choose
+                    console.log('Multiple M365 accounts cached, showing login screen');
+                }
+                // Show "change account" button if any accounts are cached
+                if (accounts.length > 0) {
+                    const clearBtn = document.getElementById('btn-clear-account');
+                    if (clearBtn) {
+                        clearBtn.style.display = 'inline-block';
+                        clearBtn.textContent = `🔄 Changer de compte (actuellement: ${accounts[0].username})`;
+                    }
                 }
             } catch (e) {
                 console.warn('MSAL init failed, demo mode available:', e);
@@ -76,7 +87,10 @@ const Auth = (() => {
             return null;
         }
         try {
-            const response = await msalInstance.loginPopup({ scopes });
+            const response = await msalInstance.loginPopup({
+                scopes,
+                prompt: 'select_account', // TOUJOURS demander quel compte utiliser
+            });
             msalInstance.setActiveAccount(response.account);
             currentUser = await getUserProfile(response.accessToken);
             return currentUser;
@@ -190,7 +204,24 @@ const Auth = (() => {
 
     function logout() {
         if (msalInstance && !isDemo) {
-            msalInstance.logoutPopup();
+            // Clear ALL cached MSAL accounts so next login shows account picker
+            const accounts = msalInstance.getAllAccounts();
+            accounts.forEach(acc => {
+                msalInstance.setActiveAccount(null);
+            });
+            // Clear MSAL cache from localStorage
+            for (const key of Object.keys(localStorage)) {
+                if (key.startsWith('msal.') || key.includes('msal')) {
+                    localStorage.removeItem(key);
+                }
+            }
+            for (const key of Object.keys(sessionStorage)) {
+                if (key.startsWith('msal.') || key.includes('msal')) {
+                    sessionStorage.removeItem(key);
+                }
+            }
+            // Also clear M365 service status cache
+            localStorage.removeItem('crm_m365_status');
         }
         currentUser = null;
         isDemo = false;

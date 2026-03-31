@@ -2040,6 +2040,26 @@ const App = (() => {
             showApp(user);
         });
 
+        // Clear cached M365 account (change account)
+        document.getElementById('btn-clear-account')?.addEventListener('click', () => {
+            // Clear all MSAL cache
+            for (const key of Object.keys(localStorage)) {
+                if (key.startsWith('msal.') || key.includes('msal')) {
+                    localStorage.removeItem(key);
+                }
+            }
+            for (const key of Object.keys(sessionStorage)) {
+                if (key.startsWith('msal.') || key.includes('msal')) {
+                    sessionStorage.removeItem(key);
+                }
+            }
+            localStorage.removeItem('crm_m365_status');
+            showToast('Cache M365 vidé. Cliquez sur Connexion pour choisir un autre compte.', 'success');
+            document.getElementById('btn-clear-account').style.display = 'none';
+            // Reinit MSAL
+            window.location.reload();
+        });
+
         // Sidebar navigation
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', (e) => {
