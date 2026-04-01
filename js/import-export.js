@@ -908,6 +908,10 @@ const ImportExport = (() => {
                 }
 
                 App.showToast(`${created.toLocaleString()} clients Avantage importés!`, 'success');
+                // Refresh contacts view if visible
+                if (typeof Contacts !== 'undefined' && typeof Contacts.render === 'function') {
+                    Contacts.render();
+                }
             }
         }
 
@@ -1107,6 +1111,10 @@ const ImportExport = (() => {
                     `;
                 }
                 App.showToast(`${created} clients Mec-inov importés!`, 'success');
+                // Refresh contacts view if visible
+                if (typeof Contacts !== 'undefined' && typeof Contacts.render === 'function') {
+                    Contacts.render();
+                }
             }
         }
         processBatch();

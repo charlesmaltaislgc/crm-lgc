@@ -13,6 +13,8 @@ const Contacts = (() => {
         { id: 'google', label: 'Google' },
         { id: 'shopify', label: 'Shopify' },
         { id: 'import', label: 'Import deals' },
+        { id: 'mecinov', label: 'Mec-inov' },
+        { id: 'avantage', label: 'Acceo Avantage' },
         { id: 'other', label: 'Autre' },
     ];
 
