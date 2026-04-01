@@ -863,6 +863,12 @@ const App = (() => {
     function showFormTab(tabName) {
         document.querySelectorAll('.form-tab').forEach(t => t.classList.toggle('active', t.dataset.formTab === tabName));
         document.querySelectorAll('.form-tab-content').forEach(c => c.classList.toggle('active', c.dataset.formTabContent === tabName));
+
+        // Render Mec-inov panel on tab switch
+        if (tabName === 'mecinov' && editingDealId && typeof MecinovSync !== 'undefined') {
+            const panel = document.getElementById('deal-mecinov-panel');
+            if (panel) MecinovSync.renderForDeal(editingDealId, panel);
+        }
     }
 
     // ===== TASK MODAL =====
