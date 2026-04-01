@@ -275,6 +275,7 @@ const App = (() => {
         // Init new modules
         if (typeof Activities !== 'undefined' && Activities.getOverdue) updateActivityBadge();
         if (typeof Automations !== 'undefined' && Automations.startPeriodicCheck) Automations.startPeriodicCheck();
+        if (typeof MecinovSync !== 'undefined' && MecinovSync.loadQuotes) MecinovSync.loadQuotes();
 
         // Initial render
         renderCurrentView();
@@ -334,6 +335,7 @@ const App = (() => {
             activities: 'Activités',
             automations: 'Automatisations',
             'import-export': 'Import / Export',
+            'mecinov-quotes': 'Soumissions Mec-inov',
             settings: 'Paramètres',
         };
         const pageTitleEl = document.getElementById('page-title');
@@ -394,6 +396,9 @@ const App = (() => {
                 break;
             case 'import-export':
                 if (typeof ImportExport !== 'undefined') ImportExport.render();
+                break;
+            case 'mecinov-quotes':
+                if (typeof MecinovSync !== 'undefined') MecinovSync.render();
                 break;
             case 'settings':
                 if (typeof CustomFields !== 'undefined') CustomFields.render();
