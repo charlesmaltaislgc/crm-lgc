@@ -372,6 +372,22 @@ const Graph = (() => {
         }
     }
 
+    // ===== SHARED MAILBOX (soumission@pflgc.com) =====
+    async function getSharedMailboxEmails(mailbox, top = 50, filter = '') {
+        let url = `/users/${encodeURIComponent(mailbox)}/messages?$top=${top}&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments`;
+        if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
+        const data = await graphFetch(url);
+        return data?.value || [];
+    }
+
+    async function getEmailAttachments(mailbox, emailId) {
+        const endpoint = mailbox
+            ? `/users/${encodeURIComponent(mailbox)}/messages/${emailId}/attachments`
+            : `/me/messages/${emailId}/attachments`;
+        const data = await graphFetch(endpoint);
+        return data?.value || [];
+    }
+
     return {
         ensureLists,
         getListItems,
@@ -379,6 +395,8 @@ const Graph = (() => {
         updateListItem,
         deleteListItem,
         getEmails,
+        getSharedMailboxEmails,
+        getEmailAttachments,
         sendEmail,
         createEvent,
         getCalendarView,

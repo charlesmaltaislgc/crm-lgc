@@ -359,7 +359,9 @@ const App = (() => {
                 Pipeline.renderList();
                 break;
             case 'emails':
-                // Rendered on demand
+                if (typeof SoumissionScanner !== 'undefined') {
+                    SoumissionScanner.render(document.getElementById('soumission-scanner-container'));
+                }
                 break;
             case 'contracts':
                 Contracts.render('pending');
