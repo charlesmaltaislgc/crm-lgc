@@ -212,10 +212,13 @@ const SoumissionScanner = (() => {
     }
 
     // ===== MAIN SCAN FUNCTION =====
+    let lastError = null;
+
     async function scan() {
         if (scanning) return;
         scanning = true;
         lastResults = [];
+        lastError = null;
 
         try {
             if (Auth.isDemoMode()) {
@@ -312,7 +315,15 @@ const SoumissionScanner = (() => {
             App.showToast(`${lastResults.length} soumission(s) detectee(s)`, 'success');
         } catch (e) {
             console.error('SoumissionScanner error:', e);
-            App.showToast('Erreur scan: ' + e.message, 'error');
+            const msg = e.message || '';
+            lastError = msg;
+            if (msg.includes('Access') || msg.includes('403') || msg.includes('401') || msg.includes('Denied') || msg.includes('Forbidden')) {
+                App.showToast('Acces refuse a soumission@pflgc.com. Verifiez les permissions et acces.', 'error');
+            } else if (msg.includes('MailboxNotFound') || msg.includes('ResourceNotFound')) {
+                App.showToast('Boite soumission@pflgc.com introuvable.', 'error');
+            } else {
+                App.showToast('Erreur scan: ' + msg, 'error');
+            }
         }
 
         scanning = false;
@@ -469,7 +480,38 @@ const SoumissionScanner = (() => {
             </div>
         `;
 
-        if (lastResults.length === 0) {
+        // Show error diagnostic if scan failed
+        if (lastError) {
+            const isAccessError = lastError.includes('Access') || lastError.includes('403') || lastError.includes('401') || lastError.includes('Denied');
+            const isNotFound = lastError.includes('MailboxNotFound') || lastError.includes('ResourceNotFound');
+            html += `
+                <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px;margin-bottom:16px">
+                    <h4 style="color:#dc2626;margin:0 0 8px">Erreur d'acces a soumission@pflgc.com</h4>
+                    <p style="font-size:13px;color:#7f1d1d;margin:0 0 12px"><strong>Erreur:</strong> ${lastError}</p>
+                    ${isAccessError ? `
+                        <div style="font-size:13px;color:#374151">
+                            <strong>Solutions:</strong>
+                            <ol style="margin:8px 0;padding-left:20px">
+                                <li>Dans <strong>Azure AD > App Registration > API Permissions</strong>, ajoutez:<br>
+                                    <code style="background:#f3f4f6;padding:2px 6px;border-radius:3px">Mail.ReadWrite.Shared</code> et
+                                    <code style="background:#f3f4f6;padding:2px 6px;border-radius:3px">Mail.Send.Shared</code> (delegue)
+                                </li>
+                                <li>Cliquez <strong>"Grant admin consent"</strong> pour votre tenant</li>
+                                <li>Dans <strong>Exchange Admin > Boites partagees</strong>, ajoutez votre compte comme membre de soumission@pflgc.com</li>
+                                <li>Deconnectez-vous du CRM et reconnectez-vous pour obtenir un nouveau token</li>
+                            </ol>
+                        </div>
+                    ` : ''}
+                    ${isNotFound ? `
+                        <div style="font-size:13px;color:#374151">
+                            <strong>La boite partagee n'existe pas.</strong> Creez-la dans M365 Admin > Exchange > Boites partagees.
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        if (lastResults.length === 0 && !lastError) {
             html += `
                 <div style="text-align:center;padding:60px 20px;color:var(--text-muted)">
                     <div style="font-size:48px;margin-bottom:12px">📬</div>

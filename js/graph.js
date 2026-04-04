@@ -373,11 +373,50 @@ const Graph = (() => {
     }
 
     // ===== SHARED MAILBOX (soumission@pflgc.com) =====
+    // Uses delegated permissions (Mail.ReadWrite.Shared) to read shared mailbox
     async function getSharedMailboxEmails(mailbox, top = 50, filter = '') {
-        let url = `/users/${encodeURIComponent(mailbox)}/messages?$top=${top}&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments`;
+        const fields = 'id,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments';
+        let url = `/users/${encodeURIComponent(mailbox)}/messages?$top=${top}&$orderby=receivedDateTime desc&$select=${fields}`;
         if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
-        const data = await graphFetch(url);
-        return data?.value || [];
+
+        try {
+            const data = await graphFetch(url);
+            return data?.value || [];
+        } catch (e) {
+            const msg = e.message || '';
+            console.warn('Shared mailbox direct access failed:', msg);
+
+            // Fallback: try via /me with shared mailbox header (some M365 configs need this)
+            if (msg.includes('Access') || msg.includes('403') || msg.includes('401') || msg.includes('ErrorAccessDenied')) {
+                console.log('Trying shared mailbox via /me with X-AnchorMailbox...');
+                try {
+                    const token = await Auth.getToken();
+                    if (!token) return [];
+                    let fallbackUrl = `${GRAPH_URL}/me/messages?$top=${top}&$orderby=receivedDateTime desc&$select=${fields}`;
+                    // Filter to emails where soumission@pflgc.com is in To or CC
+                    const sharedFilter = `(toRecipients/any(r:r/emailAddress/address eq '${mailbox}') or ccRecipients/any(r:r/emailAddress/address eq '${mailbox}'))`;
+                    const combinedFilter = filter ? `${filter} and ${sharedFilter}` : sharedFilter;
+                    fallbackUrl += `&$filter=${encodeURIComponent(combinedFilter)}`;
+
+                    const response = await fetch(fallbackUrl, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json',
+                            'X-AnchorMailbox': mailbox,
+                        }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        return data?.value || [];
+                    }
+                } catch (e2) {
+                    console.warn('Fallback shared mailbox also failed:', e2.message);
+                }
+            }
+
+            // Re-throw original error if all fallbacks fail
+            throw e;
+        }
     }
 
     async function getEmailAttachments(mailbox, emailId) {

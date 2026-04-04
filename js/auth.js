@@ -27,7 +27,9 @@ const Auth = (() => {
         'User.Read',
         'Sites.ReadWrite.All',
         'Mail.ReadWrite',
+        'Mail.ReadWrite.Shared',
         'Mail.Send',
+        'Mail.Send.Shared',
         'Calendars.ReadWrite'
     ];
 
