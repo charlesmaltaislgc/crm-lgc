@@ -316,6 +316,11 @@ const App = (() => {
         const viewEl = document.getElementById(`view-${view}`);
         if (viewEl) viewEl.classList.add('active');
 
+        // Reset scroll position when switching views
+        window.scrollTo(0, 0);
+        const mainContent = document.querySelector('.main-content');
+        if (mainContent) mainContent.scrollTop = 0;
+
         // Update page title
         const titles = {
             dashboard: 'Tableau de bord',
@@ -373,7 +378,7 @@ const App = (() => {
                 Team.render();
                 break;
             case 'reports':
-                Reports.render('month');
+                Reports.render(document.getElementById('report-period')?.value || 'all');
                 break;
             case 'installations':
                 Installations.render();
@@ -2378,6 +2383,15 @@ const App = (() => {
         // Team: assign task
         document.getElementById('btn-assign-task')?.addEventListener('click', openTaskModal);
         document.getElementById('btn-save-task')?.addEventListener('click', saveTask);
+
+        // Notification bell — navigate to dashboard alerts
+        document.getElementById('btn-notifications')?.addEventListener('click', () => {
+            navigate('dashboard');
+            // Scroll to alerts section
+            setTimeout(() => {
+                document.getElementById('alerts-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        });
 
         // Reports period
         document.getElementById('report-period')?.addEventListener('change', (e) => {

@@ -169,7 +169,27 @@ const Pipeline = (() => {
     }
 
     function renderList() {
-        const container = document.getElementById('deals-tbody');
+        // Render to either the Pipeline list-view or the standalone deals-tbody
+        let container = document.getElementById('deals-tbody');
+        const listView = document.getElementById('list-view');
+
+        // If in pipeline list mode, build table inside list-view
+        if (currentView === 'list' && listView) {
+            if (!listView.querySelector('table')) {
+                listView.innerHTML = `
+                    <table class="deals-table" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th>Client</th><th>Étape</th><th>Montant</th>
+                                <th>Vendeur</th><th>Date lead</th><th>Délai</th><th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pipeline-list-tbody"></tbody>
+                    </table>`;
+            }
+            container = document.getElementById('pipeline-list-tbody');
+        }
+
         if (!container) return;
 
         let active = Deals.getActive();

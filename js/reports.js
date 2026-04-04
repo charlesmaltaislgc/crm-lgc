@@ -42,7 +42,7 @@ const Reports = (() => {
         // Vendor performance
         const team = Auth.getTeamMembers().filter(m => ['vendeur', 'directeur', 'directeur_usine'].includes(m.role));
         const vendorStats = team.map(member => {
-            const memberDeals = periodDeals.filter(d => d.assignedTo === member.id);
+            const memberDeals = periodDeals.filter(d => d.assignedTo === member.id || d.assignedTo === member.name);
             const memberWon = memberDeals.filter(d => d.status === 'won');
             const memberLost = memberDeals.filter(d => d.status === 'lost');
             const memberClosed = memberWon.length + memberLost.length;
