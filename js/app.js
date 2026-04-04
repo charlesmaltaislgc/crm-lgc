@@ -320,6 +320,8 @@ const App = (() => {
         window.scrollTo(0, 0);
         const mainContent = document.querySelector('.main-content');
         if (mainContent) mainContent.scrollTop = 0;
+        const viewsContainer = document.querySelector('.views-container');
+        if (viewsContainer) viewsContainer.scrollTop = 0;
 
         // Update page title
         const titles = {
@@ -361,7 +363,7 @@ const App = (() => {
                 Clients.render();
                 break;
             case 'deals':
-                Pipeline.renderList();
+                renderDealsView();
                 break;
             case 'emails':
                 if (typeof SoumissionScanner !== 'undefined') {
@@ -902,6 +904,64 @@ const App = (() => {
         await Team.createTask(data);
         document.getElementById('modal-task').classList.add('hidden');
         Team.render();
+    }
+
+    // ===== DEALS VIEW (standalone, independent from Pipeline filters) =====
+    function renderDealsView() {
+        const tbody = document.getElementById('deals-tbody');
+        if (!tbody) return;
+
+        const filterStage = document.getElementById('deals-filter-stage')?.value || '';
+        const filterVendeur = document.getElementById('deals-filter-vendeur')?.value || '';
+        const filterStatus = document.getElementById('deals-filter-status')?.value || '';
+        const searchQuery = (document.getElementById('deals-search')?.value || '').toLowerCase();
+
+        let deals = Deals.getAll();
+        if (filterStatus) deals = deals.filter(d => d.status === filterStatus);
+        else deals = deals.filter(d => d.status === 'active');
+        if (filterStage) deals = deals.filter(d => String(d.stage) === filterStage);
+        if (filterVendeur) deals = deals.filter(d => d.assignedTo === filterVendeur);
+        if (searchQuery) deals = deals.filter(d =>
+            (d.clientName || '').toLowerCase().includes(searchQuery) ||
+            (d.clientPhone || '').includes(searchQuery) ||
+            (d.clientEmail || '').toLowerCase().includes(searchQuery)
+        );
+
+        const team = Auth.getTeamMembers();
+        tbody.innerHTML = deals.map(deal => {
+            const delay = Deals.getLeadToQuoteDelay(deal);
+            const overdue = Deals.isOverdue(deal);
+            const vendor = team.find(t => t.id === deal.assignedTo);
+
+            return `
+                <tr onclick="App.openDeal('${deal.id}')" style="cursor:pointer">
+                    <td>
+                        <strong>${deal.clientName}</strong>
+                        <br><small style="color:var(--text-muted)">${deal.clientPhone || ''}</small>
+                    </td>
+                    <td>
+                        <span class="stage-badge" style="background:${Deals.getStageColor(deal.stage)}20; color:${Deals.getStageColor(deal.stage)}">
+                            ${Deals.getStageName(deal.stage)}
+                        </span>
+                    </td>
+                    <td><strong>${Deals.formatMoney(deal.quoteAmount)}</strong></td>
+                    <td>${vendor ? vendor.name : 'Non assigné'}</td>
+                    <td>${Deals.formatDate(deal.leadDate)}</td>
+                    <td>
+                        <span class="delay-badge ${overdue ? 'overdue' : 'ok'}">
+                            ${delay !== null ? delay + 'j' : '--'}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); App.openDeal('${deal.id}')">Ouvrir</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        if (deals.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Aucun deal trouvé</td></tr>';
+        }
     }
 
     // ===== SEARCH =====
@@ -1686,10 +1746,17 @@ const App = (() => {
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
 
         const vendors = team.filter(m => ['vendeur', 'directeur', 'directeur_usine'].includes(m.role));
+
+        // Check if there are any deals won this month; if not, show all-time
+        const anyWonThisMonth = allDeals.some(d => d.status === 'won' && d.completedDate && d.completedDate >= monthStart);
+        const periodLabel = anyWonThisMonth ? 'ce mois' : 'tous les temps';
+
         const vendorStats = vendors.map(v => {
-            const myDeals = allDeals.filter(d => d.assignedTo === v.id);
-            const wonThisMonth = myDeals.filter(d => d.status === 'won' && d.completedDate && d.completedDate >= monthStart);
-            const revenue = wonThisMonth.reduce((sum, d) => sum + (d.contractAmount || d.quoteAmount || 0), 0);
+            const myDeals = allDeals.filter(d => d.assignedTo === v.id || d.assignedTo === v.name);
+            const wonDeals = anyWonThisMonth
+                ? myDeals.filter(d => d.status === 'won' && d.completedDate && d.completedDate >= monthStart)
+                : myDeals.filter(d => d.status === 'won');
+            const revenue = wonDeals.reduce((sum, d) => sum + (d.contractAmount || d.quoteAmount || 0), 0);
 
             // Calculate streak: consecutive wins from most recent
             const sorted = myDeals.filter(d => d.status === 'won' || d.status === 'lost')
@@ -1700,7 +1767,7 @@ const App = (() => {
                 else break;
             }
 
-            return { ...v, wonCount: wonThisMonth.length, revenue, streak };
+            return { ...v, wonCount: wonDeals.length, revenue, streak };
         }).sort((a, b) => b.revenue - a.revenue);
 
         if (vendorStats.length === 0) {
@@ -1724,7 +1791,7 @@ const App = (() => {
 
         container.innerHTML = `
             <div class="leaderboard-section">
-                <h3 class="section-title">🏆 Classement vendeurs (ce mois)</h3>
+                <h3 class="section-title">🏆 Classement vendeurs (${periodLabel})</h3>
                 <table class="leaderboard-table">
                     <thead>
                         <tr>
@@ -2459,13 +2526,11 @@ const App = (() => {
         // Email compose
         document.getElementById('btn-send-composed-email')?.addEventListener('click', sendComposedEmail);
 
-        // Deals list search
-        document.getElementById('deals-search')?.addEventListener('input', (e) => {
-            const q = e.target.value.toLowerCase();
-            document.querySelectorAll('#deals-tbody tr').forEach(tr => {
-                tr.style.display = q.length < 2 || tr.textContent.toLowerCase().includes(q) ? '' : 'none';
-            });
-        });
+        // Deals list filters
+        document.getElementById('deals-search')?.addEventListener('input', () => renderDealsView());
+        document.getElementById('deals-filter-stage')?.addEventListener('change', () => renderDealsView());
+        document.getElementById('deals-filter-vendeur')?.addEventListener('change', () => renderDealsView());
+        document.getElementById('deals-filter-status')?.addEventListener('change', () => renderDealsView());
 
         // File upload
         const fileInput = document.getElementById('file-upload');
