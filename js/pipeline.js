@@ -318,9 +318,16 @@ const Pipeline = (() => {
     }
 
     async function quickAction(dealId, actionType) {
+        const deal = Deals.getById(dealId);
+
+        // Click-to-call: actually dial the phone
+        if (actionType === 'call' && deal?.clientPhone) {
+            App.makeCall(deal.clientPhone, deal.clientName, dealId);
+        }
+
         await Deals.quickAction(dealId, actionType);
         const labels = { call: 'Appel enregistre', email: 'Courriel enregistre', noreply: 'Pas de reponse enregistre' };
-        App.showToast(labels[actionType] || 'Action enregistree', 'success');
+        if (actionType !== 'call') App.showToast(labels[actionType] || 'Action enregistree', 'success');
         render();
         Alerts.refresh();
     }

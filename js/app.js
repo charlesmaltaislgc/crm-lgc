@@ -1080,6 +1080,20 @@ const App = (() => {
         if (el7) el7.value = shopifyStore;
         if (el8) el8.value = shopifyToken;
 
+        // Phone/Telus settings
+        const phoneProto = localStorage.getItem('crm_phoneProtocol') || 'tel';
+        const phonePrefix = localStorage.getItem('crm_phonePrefix') || '';
+        const phoneLog = localStorage.getItem('crm_phoneLog') !== 'false';
+        const phoneSms = localStorage.getItem('crm_phoneSms') !== 'false';
+        const elProto = document.getElementById('setting-phone-protocol');
+        const elPrefix = document.getElementById('setting-phone-prefix');
+        const elPhoneLog = document.getElementById('setting-phone-log');
+        const elPhoneSms = document.getElementById('setting-phone-sms');
+        if (elProto) elProto.value = phoneProto;
+        if (elPrefix) elPrefix.value = phonePrefix;
+        if (elPhoneLog) elPhoneLog.checked = phoneLog;
+        if (elPhoneSms) elPhoneSms.checked = phoneSms;
+
         // Email signature settings
         loadSignatureSettings();
     }
@@ -1138,6 +1152,118 @@ const App = (() => {
         if (el1) localStorage.setItem('crm_relanceDelay', el1.value);
         if (el2) localStorage.setItem('crm_leadDelay', el2.value);
         if (el3) localStorage.setItem('crm_net30Delay', el3.value);
+    }
+
+    // ===== PHONE / CLICK-TO-CALL =====
+    function makeCall(phoneNumber, clientName, dealId) {
+        if (!phoneNumber) { showToast('Aucun numéro de téléphone', 'warning'); return; }
+
+        const protocol = localStorage.getItem('crm_phoneProtocol') || 'tel';
+        const prefix = localStorage.getItem('crm_phonePrefix') || '';
+        const shouldLog = localStorage.getItem('crm_phoneLog') !== 'false';
+
+        // Clean phone number: keep only digits
+        let cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+        if (prefix) cleanNumber = prefix + cleanNumber;
+
+        // Open phone app/softphone
+        window.open(`${protocol}:${cleanNumber}`, '_self');
+
+        // Log the call as activity
+        if (shouldLog && typeof Activities !== 'undefined') {
+            Activities.create({
+                type: 'call',
+                title: `Appel sortant - ${clientName || phoneNumber}`,
+                description: `Appel au ${phoneNumber}`,
+                dealId: dealId || null,
+                assignedTo: Auth.getUser()?.id,
+                status: 'completed',
+                date: new Date().toISOString(),
+                duration: 0,
+            });
+        }
+
+        showToast(`📞 Appel à ${clientName || phoneNumber}...`, 'info');
+    }
+
+    function sendSMS(phoneNumber, clientName) {
+        if (!phoneNumber) { showToast('Aucun numéro de téléphone', 'warning'); return; }
+        const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+        window.open(`sms:${cleanNumber}`, '_self');
+        showToast(`💬 SMS à ${clientName || phoneNumber}...`, 'info');
+    }
+
+    function testPhoneCall() {
+        const protocol = localStorage.getItem('crm_phoneProtocol') || 'tel';
+        const testNumber = '4185497837';
+        showToast(`Test: ouverture ${protocol}:${testNumber}...`, 'info');
+        window.open(`${protocol}:${testNumber}`, '_self');
+    }
+
+    // ===== AI CONNECTION TEST =====
+    async function testAIConnection() {
+        const resultEl = document.getElementById('ai-test-result');
+        const apiKey = document.getElementById('setting-ai-apikey')?.value || localStorage.getItem('crm_ai_apikey') || '';
+        const provider = document.getElementById('setting-ai-provider')?.value || 'anthropic';
+        const model = document.getElementById('setting-ai-model')?.value || 'claude-sonnet-4-20250514';
+
+        if (!apiKey) {
+            if (resultEl) resultEl.innerHTML = '<span style="color:#dc2626">❌ Aucune clé API. Entrez une clé ci-dessus.</span>';
+            return;
+        }
+
+        if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Test en cours...</span>';
+
+        try {
+            if (provider === 'anthropic') {
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey,
+                        'anthropic-version': '2023-06-01',
+                        'anthropic-dangerous-direct-browser-access': 'true',
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        max_tokens: 50,
+                        messages: [{ role: 'user', content: 'Dis simplement "CRM LGC connecté!" en une ligne.' }],
+                    }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const reply = data.content?.[0]?.text || 'OK';
+                    if (resultEl) resultEl.innerHTML = `<span style="color:#16a34a">✅ Connecté! Modèle: ${model}<br>Réponse: "${reply}"</span>`;
+                    showToast('IA connectée avec succès!', 'success');
+                } else {
+                    const err = await response.json().catch(() => ({}));
+                    if (resultEl) resultEl.innerHTML = `<span style="color:#dc2626">❌ Erreur ${response.status}: ${err.error?.message || 'Clé invalide'}</span>`;
+                }
+            } else {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                    body: JSON.stringify({
+                        model: model || 'gpt-4o',
+                        max_tokens: 50,
+                        messages: [{ role: 'user', content: 'Dis simplement "CRM LGC connecté!" en une ligne.' }],
+                    }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const reply = data.choices?.[0]?.message?.content || 'OK';
+                    if (resultEl) resultEl.innerHTML = `<span style="color:#16a34a">✅ Connecté! Modèle: ${model}<br>Réponse: "${reply}"</span>`;
+                    showToast('IA connectée avec succès!', 'success');
+                } else {
+                    const err = await response.json().catch(() => ({}));
+                    if (resultEl) resultEl.innerHTML = `<span style="color:#dc2626">❌ Erreur ${response.status}: ${err.error?.message || 'Clé invalide'}</span>`;
+                }
+            }
+        } catch (e) {
+            if (resultEl) resultEl.innerHTML = `<span style="color:#dc2626">❌ Erreur réseau: ${e.message}</span>`;
+        }
     }
 
     // ===== M365 CONNECTION TEST =====
@@ -2498,12 +2624,21 @@ const App = (() => {
         });
         document.getElementById('btn-test-shopify')?.addEventListener('click', () => Shopify.testConnection());
 
+        // Phone/Telus settings
+        document.getElementById('btn-save-phone')?.addEventListener('click', () => {
+            localStorage.setItem('crm_phoneProtocol', document.getElementById('setting-phone-protocol')?.value || 'tel');
+            localStorage.setItem('crm_phonePrefix', document.getElementById('setting-phone-prefix')?.value || '');
+            localStorage.setItem('crm_phoneLog', document.getElementById('setting-phone-log')?.checked ?? true);
+            localStorage.setItem('crm_phoneSms', document.getElementById('setting-phone-sms')?.checked ?? true);
+            showToast('Paramètres téléphonie sauvegardés', 'success');
+        });
+
         // AI settings
         document.getElementById('btn-save-ai')?.addEventListener('click', () => {
             localStorage.setItem('crm_ai_provider', document.getElementById('setting-ai-provider')?.value || 'anthropic');
             localStorage.setItem('crm_ai_apikey', document.getElementById('setting-ai-apikey')?.value || '');
             localStorage.setItem('crm_ai_model', document.getElementById('setting-ai-model')?.value || '');
-            App.showToast('Paramètres IA sauvegardés', 'success');
+            showToast('Paramètres IA sauvegardés', 'success');
         });
 
         // Theme
@@ -2903,6 +3038,10 @@ const App = (() => {
         renderM365Status,
         triggerConfetti,
         showEmailTemplatesManager,
+        makeCall,
+        sendSMS,
+        testPhoneCall,
+        testAIConnection,
         _editTemplate,
         _deleteTemplate,
         _handleExternalSign,

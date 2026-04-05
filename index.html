@@ -539,7 +539,47 @@
                             <button id="btn-add-member" class="btn btn-sm btn-outline">+ Ajouter un membre</button>
                         </div>
                         <div class="settings-section">
-                            <h3>Intelligence artificielle (Lecteur de plans)</h3>
+                            <h3>📞 Téléphonie (Telus / Click-to-call)</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                                Active le click-to-call sur tous les numéros de téléphone du CRM. Fonctionne avec Telus Business Connect, Teams, ou tout softphone VoIP.
+                            </p>
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label>Protocole d'appel</label>
+                                    <select id="setting-phone-protocol" class="input-sm">
+                                        <option value="tel">tel: (Standard - Telus, Teams, cellulaire)</option>
+                                        <option value="sip">sip: (VoIP / SIP client)</option>
+                                        <option value="callto">callto: (Skype / Legacy)</option>
+                                    </select>
+                                    <span style="font-size:11px;color:var(--text-muted)">Choisissez le protocole qui correspond à votre système téléphonique</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>Préfixe de composition (optionnel)</label>
+                                    <input type="text" id="setting-phone-prefix" class="input-sm" placeholder="ex: 9 pour ligne externe">
+                                    <span style="font-size:11px;color:var(--text-muted)">Numéro ajouté avant chaque appel (ex: 9 pour obtenir la ligne externe)</span>
+                                </div>
+                                <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                                        <input type="checkbox" id="setting-phone-log" checked>
+                                        Journaliser les appels automatiquement
+                                    </label>
+                                </div>
+                                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                                        <input type="checkbox" id="setting-phone-sms" checked>
+                                        Activer bouton SMS à côté des appels
+                                    </label>
+                                </div>
+                                <button id="btn-save-phone" class="btn btn-sm btn-primary" style="margin-top:12px">Sauvegarder</button>
+                                <button id="btn-test-phone" class="btn btn-sm btn-outline" style="margin-top:12px" onclick="App.testPhoneCall()">📞 Tester un appel</button>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>🤖 Intelligence artificielle</h3>
+                            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                                Alimente le <strong>chatbot IA</strong> (🤖 en bas à droite) et le <strong>lecteur de plans</strong>.
+                                Le chatbot peut répondre à vos questions sur les deals, pipeline, SAV, et naviguer dans le CRM.
+                            </p>
                             <div class="settings-form">
                                 <div class="form-group">
                                     <label>Fournisseur IA</label>
@@ -551,12 +591,20 @@
                                 <div class="form-group">
                                     <label>Clé API</label>
                                     <input type="password" id="setting-ai-apikey" class="input-sm" placeholder="sk-ant-... ou sk-...">
+                                    <span style="font-size:11px;color:var(--text-muted)">
+                                        Anthropic: <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com/settings/keys</a> |
+                                        OpenAI: <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a>
+                                    </span>
                                 </div>
                                 <div class="form-group">
                                     <label>Modèle</label>
                                     <input type="text" id="setting-ai-model" class="input-sm" value="claude-sonnet-4-20250514" placeholder="claude-sonnet-4-20250514">
                                 </div>
-                                <button id="btn-save-ai" class="btn btn-sm btn-primary">Sauvegarder</button>
+                                <div style="display:flex;gap:8px;margin-top:4px">
+                                    <button id="btn-save-ai" class="btn btn-sm btn-primary">Sauvegarder</button>
+                                    <button id="btn-test-ai" class="btn btn-sm btn-outline" onclick="App.testAIConnection()">🧪 Tester la connexion IA</button>
+                                </div>
+                                <div id="ai-test-result" style="margin-top:8px;font-size:12px"></div>
                                 <p style="font-size:11px;color:var(--text-muted);margin-top:8px">
                                     La clé API est stockée localement dans votre navigateur. Elle n'est jamais envoyée à nos serveurs.
                                 </p>
@@ -757,7 +805,7 @@
                                 <input type="text" name="clientName" id="deal-client-name" required autocomplete="off" placeholder="Rechercher ou nouveau client...">
                             </div>
                             <div class="form-group">
-                                <label>Téléphone *</label>
+                                <label>Téléphone * <button type="button" class="btn-inline-action" onclick="App.makeCall(this.closest('.form-group').querySelector('input').value, document.querySelector('[name=clientName]').value, App._editingDealId)" title="Appeler">📞</button> <button type="button" class="btn-inline-action" onclick="App.sendSMS(this.closest('.form-group').querySelector('input').value, document.querySelector('[name=clientName]').value)" title="SMS">💬</button></label>
                                 <input type="tel" name="clientPhone" required>
                             </div>
                         </div>
