@@ -164,7 +164,26 @@ const EmailScanner = (() => {
 
                 const weekAgo = new Date();
                 weekAgo.setDate(weekAgo.getDate() - 7);
-                emails = await Graph.getEmails(50, `receivedDateTime ge ${weekAgo.toISOString()}`);
+                const dateFilter = `receivedDateTime ge ${weekAgo.toISOString()}`;
+
+                // Scan personal mailbox
+                emails = await Graph.getEmails(50, dateFilter);
+
+                // Also scan soumission@pflgc.com shared mailbox for all users
+                const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || 'soumission@pflgc.com';
+                if (sharedMailbox) {
+                    try {
+                        const sharedEmails = await Graph.getSharedMailboxEmails(sharedMailbox, 30, dateFilter);
+                        if (sharedEmails?.length > 0) {
+                            // Mark shared emails so we know the source
+                            sharedEmails.forEach(e => { e._fromShared = sharedMailbox; });
+                            emails = [...(emails || []), ...sharedEmails];
+                        }
+                    } catch (e) {
+                        console.warn('Could not scan shared mailbox for leads:', e.message);
+                    }
+                }
+
                 if (!emails || emails.length === 0) {
                     App.showToast('Aucun courriel trouvé dans les 7 derniers jours', 'info');
                 }

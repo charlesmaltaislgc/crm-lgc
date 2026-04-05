@@ -284,6 +284,11 @@ const App = (() => {
         // Show daily summary banner
         showDailyBanner(user);
 
+        // Set default shared mailbox for all users (soumission@pflgc.com)
+        if (!localStorage.getItem('crm_sharedMailbox')) {
+            localStorage.setItem('crm_sharedMailbox', 'soumission@pflgc.com');
+        }
+
         // Auto-detect M365 services (background, don't block)
         if (!Auth.isDemoMode()) {
             Graph.detectServices().then(status => {
@@ -1096,6 +1101,15 @@ const App = (() => {
 
         // Email signature settings
         loadSignatureSettings();
+
+        // Data storage status
+        updateStorageStatus();
+
+        // Default shared mailbox for soumission@pflgc.com
+        const sharedMailboxInput = document.getElementById('setting-shared-mailbox');
+        if (sharedMailboxInput && !sharedMailboxInput.value) {
+            sharedMailboxInput.value = Graph.DEFAULT_SHARED_MAILBOX || 'soumission@pflgc.com';
+        }
     }
 
     function loadSignatureSettings() {
@@ -1388,6 +1402,145 @@ const App = (() => {
                 msgs.push('❌ SharePoint: ' + (status.sharepoint.message || 'erreur inconnue'));
             }
             details.innerHTML = msgs.map(m => `<p style="margin:4px 0">${m}</p>`).join('');
+        }
+    }
+
+    // ===== DATA STORAGE & MIGRATION =====
+    function updateStorageStatus() {
+        const icon = document.getElementById('storage-icon');
+        const label = document.getElementById('storage-mode-label');
+        const desc = document.getElementById('storage-mode-desc');
+        const migrateBtn = document.getElementById('btn-migrate-data');
+        const setupBtn = document.getElementById('btn-setup-sharepoint');
+
+        if (!icon) return;
+
+        const isLocal = Auth.useLocalStorage();
+        const spSite = localStorage.getItem('crm_spSite') || '';
+
+        if (isLocal && !spSite) {
+            icon.textContent = '⚠️';
+            label.textContent = 'Mode: localStorage (données locales uniquement)';
+            label.style.color = '#dc2626';
+            desc.textContent = '⚠️ Les données sont dans CE navigateur seulement. Si vous changez de poste, elles seront perdues!';
+            if (migrateBtn) migrateBtn.disabled = true;
+            if (setupBtn) setupBtn.style.display = '';
+        } else if (spSite && isLocal) {
+            icon.textContent = '🔧';
+            label.textContent = 'SharePoint configuré mais pas encore activé';
+            label.style.color = '#f59e0b';
+            desc.textContent = 'Cliquez "Migrer les données" pour transférer vos données vers SharePoint.';
+            if (migrateBtn) migrateBtn.disabled = false;
+            if (setupBtn) setupBtn.style.display = 'none';
+        } else {
+            icon.textContent = '✅';
+            label.textContent = 'Mode: SharePoint Lists (données partagées)';
+            label.style.color = '#16a34a';
+            desc.textContent = 'Les données sont stockées dans SharePoint. Toute l\'équipe accède aux mêmes données.';
+            if (migrateBtn) migrateBtn.disabled = true;
+            if (migrateBtn) migrateBtn.textContent = '✅ Données migrées';
+            if (setupBtn) setupBtn.style.display = 'none';
+        }
+    }
+
+    async function autoSetupSharePoint() {
+        const btn = document.getElementById('btn-setup-sharepoint');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Configuration...'; }
+
+        try {
+            if (Auth.isDemoMode()) {
+                showToast('Connectez-vous avec M365 pour configurer SharePoint', 'warning');
+                return;
+            }
+
+            // Step 1: Detect SharePoint sites
+            showToast('Recherche de sites SharePoint...', 'info');
+            const status = await Graph.detectServices();
+
+            let spUrl = localStorage.getItem('crm_spSite') || '';
+
+            if (!spUrl) {
+                if (status.sharepoint?.recommended) {
+                    spUrl = status.sharepoint.recommended;
+                } else if (status.sharepoint?.sites?.length > 0) {
+                    spUrl = status.sharepoint.sites[0].url;
+                } else {
+                    showToast('Aucun site SharePoint trouvé. Créez un site dans M365 admin.', 'error');
+                    return;
+                }
+            }
+
+            // Save the SP site URL
+            localStorage.setItem('crm_spSite', spUrl);
+            const spInput = document.getElementById('setting-sp-site');
+            if (spInput) spInput.value = spUrl;
+
+            // Step 2: Ensure lists exist
+            showToast('Création des listes CRM dans SharePoint...', 'info');
+            await Graph.ensureLists();
+
+            showToast(`✅ SharePoint configuré: ${spUrl}`, 'success');
+            showToast('Cliquez "Migrer les données" pour transférer vos données existantes.', 'info');
+
+            // Update storage status UI
+            updateStorageStatus();
+
+            // Enable migrate button
+            const migrateBtn = document.getElementById('btn-migrate-data');
+            if (migrateBtn) migrateBtn.disabled = false;
+
+        } catch (e) {
+            showToast('Erreur configuration SharePoint: ' + e.message, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = '🚀 Configurer SharePoint automatiquement'; }
+        }
+    }
+
+    async function migrateDataToSharePoint() {
+        const btn = document.getElementById('btn-migrate-data');
+        const progressDiv = document.getElementById('migration-progress');
+        const progressText = document.getElementById('migration-progress-text');
+        const resultDiv = document.getElementById('migration-result');
+
+        if (btn) btn.disabled = true;
+        if (progressDiv) progressDiv.style.display = 'block';
+        if (resultDiv) resultDiv.style.display = 'none';
+
+        try {
+            const result = await Graph.migrateToSharePoint((msg) => {
+                if (progressText) progressText.textContent = msg;
+            });
+
+            if (progressDiv) progressDiv.style.display = 'none';
+            if (resultDiv) {
+                resultDiv.style.display = 'block';
+                const hasErrors = result.errors.length > 0;
+                resultDiv.innerHTML = `
+                    <div style="padding:12px;border-radius:8px;background:${hasErrors ? '#fef2f2' : '#f0fdf4'};border:1px solid ${hasErrors ? '#fecaca' : '#bbf7d0'}">
+                        <strong>${hasErrors ? '⚠️' : '✅'} Migration terminée!</strong>
+                        <div style="margin-top:8px;font-size:12px">
+                            <div>📋 Deals: ${result.deals} migrés</div>
+                            <div>📝 Notes: ${result.notes} migrées</div>
+                            <div>✅ Tâches: ${result.tasks} migrées</div>
+                            <div>📄 Contrats: ${result.contracts} migrés</div>
+                            ${hasErrors ? `<div style="margin-top:8px;color:#dc2626"><strong>Erreurs (${result.errors.length}):</strong><br>${result.errors.slice(0, 5).join('<br>')}</div>` : ''}
+                        </div>
+                        <p style="margin-top:8px;font-size:11px;color:var(--text-muted)">Rechargez la page pour utiliser SharePoint comme source de données.</p>
+                    </div>`;
+            }
+
+            showToast(`Migration terminée: ${result.deals} deals, ${result.notes} notes`, 'success');
+            updateStorageStatus();
+
+        } catch (e) {
+            showToast('Erreur migration: ' + e.message, 'error');
+            if (progressDiv) progressDiv.style.display = 'none';
+            if (resultDiv) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<div style="padding:12px;background:#fef2f2;border-radius:8px;color:#dc2626">❌ Erreur: ${e.message}</div>`;
+            }
+        } finally {
+            if (btn) btn.disabled = false;
         }
     }
 
@@ -2603,14 +2756,20 @@ const App = (() => {
                 document.getElementById('setting-tenant-id').value,
                 document.getElementById('setting-sp-site').value
             );
-            // Save shared mailbox
-            const sharedMailbox = document.getElementById('setting-shared-mailbox')?.value || '';
+            // Save shared mailbox (default: soumission@pflgc.com)
+            const sharedMailbox = document.getElementById('setting-shared-mailbox')?.value || 'soumission@pflgc.com';
             localStorage.setItem('crm_sharedMailbox', sharedMailbox);
+            // Update storage status
+            updateStorageStatus();
             showToast('Paramètres M365 sauvegardés. Rechargez la page pour appliquer.', 'success');
         });
 
         // Settings: test M365 connections
         document.getElementById('btn-test-m365')?.addEventListener('click', testM365Connections);
+
+        // Settings: SharePoint setup & migration
+        document.getElementById('btn-setup-sharepoint')?.addEventListener('click', autoSetupSharePoint);
+        document.getElementById('btn-migrate-data')?.addEventListener('click', migrateDataToSharePoint);
 
         // Settings: save email signature
         document.getElementById('btn-save-signature')?.addEventListener('click', saveSignatureSettings);
@@ -3042,6 +3201,9 @@ const App = (() => {
         sendSMS,
         testPhoneCall,
         testAIConnection,
+        autoSetupSharePoint,
+        migrateDataToSharePoint,
+        updateStorageStatus,
         _editTemplate,
         _deleteTemplate,
         _handleExternalSign,

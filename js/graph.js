@@ -43,6 +43,8 @@ const Graph = (() => {
                 { name: 'MeasurementDate', dateTime: { format: 'dateOnly' } },
                 { name: 'InstallDate', dateTime: { format: 'dateOnly' } },
                 { name: 'CompletedDate', dateTime: { format: 'dateOnly' } },
+                { name: 'FollowUpCount', number: {} },
+                { name: 'LostReason', text: {} },
             ]
         },
         CRM_Notes: {
@@ -52,6 +54,7 @@ const Graph = (() => {
                 { name: 'Author', text: {} },
                 { name: 'NoteText', text: { allowMultipleLines: true } },
                 { name: 'NoteDate', dateTime: {} },
+                { name: 'NoteType', text: {} },
             ]
         },
         CRM_Tasks: {
@@ -297,13 +300,20 @@ const Graph = (() => {
 
     // ===== OUTLOOK EMAILS =====
     // Supports both personal mailbox and shared mailbox
+    // Default shared mailbox for all LGC users
+    const DEFAULT_SHARED_MAILBOX = 'soumission@pflgc.com';
+
     function getMailboxEndpoint() {
         const status = getServiceStatus();
-        const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || '';
+        const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || DEFAULT_SHARED_MAILBOX;
         if (status.outlook?.status === 'shared' && sharedMailbox) {
             return `/users/${sharedMailbox}`;
         }
         return '/me';
+    }
+
+    function getDefaultSharedMailbox() {
+        return localStorage.getItem('crm_sharedMailbox') || DEFAULT_SHARED_MAILBOX;
     }
 
     async function getEmails(top = 50, filter = '') {
@@ -427,6 +437,104 @@ const Graph = (() => {
         return data?.value || [];
     }
 
+    // ===== DATA MIGRATION: localStorage → SharePoint =====
+    async function migrateToSharePoint(progressCallback) {
+        const site = await getSiteId();
+        if (!site) throw new Error('SharePoint site non configuré');
+
+        // Step 1: Ensure lists exist
+        progressCallback?.('Création des listes SharePoint...');
+        await ensureLists();
+
+        // Step 2: Migrate deals
+        const localDeals = JSON.parse(localStorage.getItem('crm_deals') || '[]');
+        const localNotes = JSON.parse(localStorage.getItem('crm_notes') || '[]');
+        const localTasks = JSON.parse(localStorage.getItem('crm_tasks') || '[]');
+        const localContracts = JSON.parse(localStorage.getItem('crm_contracts') || '[]');
+
+        let migrated = { deals: 0, notes: 0, tasks: 0, contracts: 0, errors: [] };
+
+        // Migrate deals
+        if (localDeals.length > 0) {
+            progressCallback?.(`Migration de ${localDeals.length} deals...`);
+            for (const deal of localDeals) {
+                try {
+                    const spFields = Deals.mapToSharePoint(deal);
+                    await createListItem('CRM_Deals', spFields);
+                    migrated.deals++;
+                    if (migrated.deals % 5 === 0) {
+                        progressCallback?.(`Deals: ${migrated.deals}/${localDeals.length}...`);
+                    }
+                } catch (e) {
+                    migrated.errors.push(`Deal ${deal.clientName}: ${e.message}`);
+                }
+            }
+        }
+
+        // Migrate notes
+        if (localNotes.length > 0) {
+            progressCallback?.(`Migration de ${localNotes.length} notes...`);
+            for (const note of localNotes) {
+                try {
+                    await createListItem('CRM_Notes', {
+                        DealId: note.dealId,
+                        Author: note.author,
+                        NoteText: note.noteText,
+                        NoteDate: note.noteDate,
+                        NoteType: note.noteType || 'note',
+                    });
+                    migrated.notes++;
+                } catch (e) {
+                    migrated.errors.push(`Note: ${e.message}`);
+                }
+            }
+        }
+
+        // Migrate tasks
+        if (localTasks.length > 0) {
+            progressCallback?.(`Migration de ${localTasks.length} tâches...`);
+            for (const task of localTasks) {
+                try {
+                    await createListItem('CRM_Tasks', {
+                        DealId: task.dealId || '',
+                        AssignedTo: task.assignedTo || '',
+                        TaskDescription: task.taskDescription || task.description || '',
+                        Deadline: task.deadline || '',
+                        Priority: task.priority || 'normal',
+                        TaskStatus: task.taskStatus || 'pending',
+                    });
+                    migrated.tasks++;
+                } catch (e) {
+                    migrated.errors.push(`Tâche: ${e.message}`);
+                }
+            }
+        }
+
+        // Migrate contracts
+        if (localContracts.length > 0) {
+            progressCallback?.(`Migration de ${localContracts.length} contrats...`);
+            for (const contract of localContracts) {
+                try {
+                    await createListItem('CRM_Contracts', {
+                        DealId: contract.dealId || '',
+                        ContractUrl: contract.signUrl || '',
+                        SignToken: contract.signToken || '',
+                        Signed: contract.signed || false,
+                        SignDate: contract.signDate || '',
+                        SignerName: contract.signerName || '',
+                        SignerIP: contract.signerIP || '',
+                    });
+                    migrated.contracts++;
+                } catch (e) {
+                    migrated.errors.push(`Contrat: ${e.message}`);
+                }
+            }
+        }
+
+        progressCallback?.('Migration terminée!');
+        return migrated;
+    }
+
     return {
         ensureLists,
         getListItems,
@@ -443,5 +551,8 @@ const Graph = (() => {
         detectServices,
         getServiceStatus,
         getSiteId,
+        migrateToSharePoint,
+        getDefaultSharedMailbox,
+        DEFAULT_SHARED_MAILBOX,
     };
 })();

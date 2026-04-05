@@ -732,11 +732,39 @@
                                     <div id="sp-site-suggestions" style="font-size:11px;margin-top:4px"></div>
                                 </div>
                                 <div class="form-group">
-                                    <label>Boîte courriel partagée (si votre compte n'a pas de boîte)</label>
-                                    <input type="email" id="setting-shared-mailbox" class="input-sm" placeholder="soumission@pflgc.com">
-                                    <span style="font-size:11px;color:var(--text-muted)">Utilisé si le compte M365 connecté n'a pas de boîte Outlook (ex: compte admin)</span>
+                                    <label>📧 Boîte courriel partagée (pour toute l'équipe)</label>
+                                    <input type="email" id="setting-shared-mailbox" class="input-sm" value="soumission@pflgc.com" placeholder="soumission@pflgc.com">
+                                    <span style="font-size:11px;color:var(--text-muted)">Boîte partagée scannée par le CRM pour détecter les leads et soumissions. Tous les utilisateurs y ont accès.</span>
                                 </div>
                                 <button id="btn-save-azure" class="btn btn-sm btn-primary">Sauvegarder</button>
+                            </div>
+
+                            <hr style="margin:16px 0;border-color:var(--border)">
+
+                            <!-- DATA STORAGE & MIGRATION -->
+                            <h4 style="font-size:14px;margin-bottom:8px">💾 Stockage des données (Production)</h4>
+                            <div id="storage-status" style="padding:12px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);margin-bottom:12px">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                                    <span id="storage-icon" style="font-size:20px">⚠️</span>
+                                    <div>
+                                        <strong id="storage-mode-label">Mode actuel: localStorage (données locales)</strong>
+                                        <div style="font-size:11px;color:var(--text-muted)" id="storage-mode-desc">Les données sont stockées dans votre navigateur seulement. Risque de perte!</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="migration-section" style="margin-bottom:12px">
+                                <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+                                    Pour la production, migrez vos données vers SharePoint Lists. Toute l'équipe partagera les mêmes données.
+                                </p>
+                                <button id="btn-setup-sharepoint" class="btn btn-sm btn-primary" style="margin-right:8px">🚀 Configurer SharePoint automatiquement</button>
+                                <button id="btn-migrate-data" class="btn btn-sm btn-outline" style="margin-right:8px" disabled>📦 Migrer les données</button>
+                                <div id="migration-progress" style="font-size:12px;margin-top:8px;color:var(--text-muted);display:none">
+                                    <div style="display:flex;align-items:center;gap:8px">
+                                        <div class="spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 1s linear infinite"></div>
+                                        <span id="migration-progress-text">Préparation...</span>
+                                    </div>
+                                </div>
+                                <div id="migration-result" style="font-size:12px;margin-top:8px;display:none"></div>
                             </div>
                         </div>
                     </div>

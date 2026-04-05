@@ -41,11 +41,25 @@ const Deals = (() => {
             notes = savedNotes ? JSON.parse(savedNotes) : [];
         } else {
             try {
-                deals = await Graph.getListItems('CRM_Deals');
-                notes = await Graph.getListItems('CRM_Notes');
+                const spDeals = await Graph.getListItems('CRM_Deals');
+                deals = spDeals.map(item => mapFromSharePoint(item));
+                const spNotes = await Graph.getListItems('CRM_Notes');
+                notes = spNotes.map(item => {
+                    return {
+                        id: item.id,
+                        _spId: item.id,
+                        dealId: item.DealId || item.dealId,
+                        author: item.Author || item.author,
+                        noteText: item.NoteText || item.noteText,
+                        noteDate: item.NoteDate || item.noteDate,
+                        noteType: item.NoteType || item.noteType || 'note',
+                        noteIcon: item.NoteIcon || item.noteIcon || '',
+                    };
+                });
+                // Also keep a localStorage cache for offline/fallback
+                saveLocal();
             } catch (e) {
                 console.error('Failed to load deals from SharePoint, falling back to localStorage:', e);
-                // Fallback to localStorage
                 const saved = localStorage.getItem(STORAGE_KEY);
                 deals = saved ? JSON.parse(saved) : generateDemoDeals();
                 if (!saved) saveLocal();
@@ -81,7 +95,7 @@ const Deals = (() => {
 
     async function create(dealData) {
         const deal = {
-            id: Auth.useLocalStorage() ? 'D' + Date.now() : null,
+            id: 'D' + Date.now(),
             ...dealData,
             stage: dealData.stage || 1,
             status: 'active',
@@ -89,33 +103,42 @@ const Deals = (() => {
             updatedAt: new Date().toISOString(),
         };
 
-        if (Auth.useLocalStorage()) {
-            deals.push(deal);
-            saveLocal();
-        } else {
-            const created = await Graph.createListItem('CRM_Deals', mapToSharePoint(deal));
-            if (created) {
-                deal.id = created.id;
-                deals.push(deal);
+        if (!Auth.useLocalStorage()) {
+            try {
+                const created = await Graph.createListItem('CRM_Deals', mapToSharePoint(deal));
+                if (created) {
+                    deal._spId = created.id;
+                    deal.id = created.id; // Use SP id as canonical
+                }
+            } catch (e) {
+                console.error('SharePoint create failed, saving locally:', e);
             }
         }
+
+        deals.push(deal);
+        saveLocal(); // Always cache locally
 
         App.addActivity('new_deal', `Nouveau deal: ${deal.clientName}`, deal.id);
         return deal;
     }
 
     async function update(id, updates) {
-        const idx = deals.findIndex(d => d.id === id);
+        const idx = deals.findIndex(d => d.id === id || d._spId === id);
         if (idx === -1) return null;
 
         const oldStage = deals[idx].stage;
         deals[idx] = { ...deals[idx], ...updates, updatedAt: new Date().toISOString() };
 
-        if (Auth.useLocalStorage()) {
-            saveLocal();
-        } else {
-            await Graph.updateListItem('CRM_Deals', id, mapToSharePoint(updates));
+        if (!Auth.useLocalStorage()) {
+            try {
+                const spId = deals[idx]._spId || id;
+                await Graph.updateListItem('CRM_Deals', spId, mapToSharePoint(updates));
+            } catch (e) {
+                console.error('SharePoint update failed, saved locally:', e);
+            }
         }
+
+        saveLocal(); // Always cache locally
 
         if (updates.stage && updates.stage !== oldStage) {
             App.addActivity('stage_change',
@@ -144,23 +167,33 @@ const Deals = (() => {
     async function addNote(dealId, text, meta = {}) {
         const user = Auth.getUser();
         const note = {
-            id: Auth.useLocalStorage() ? 'N' + Date.now() : null,
+            id: 'N' + Date.now(),
             dealId,
             author: user.name,
             noteText: text,
             noteDate: new Date().toISOString(),
-            noteType: meta.type || 'note', // note, call, email, noreply, stage, auto
+            noteType: meta.type || 'note',
             noteIcon: meta.icon || '',
         };
 
-        if (Auth.useLocalStorage()) {
-            notes.push(note);
-            saveLocal();
-        } else {
-            const created = await Graph.createListItem('CRM_Notes', note);
-            if (created) note.id = created.id;
-            notes.push(note);
+        if (!Auth.useLocalStorage()) {
+            try {
+                const spNote = {
+                    DealId: dealId,
+                    Author: note.author,
+                    NoteText: text,
+                    NoteDate: note.noteDate,
+                    NoteType: note.noteType,
+                };
+                const created = await Graph.createListItem('CRM_Notes', spNote);
+                if (created) { note._spId = created.id; note.id = created.id; }
+            } catch (e) {
+                console.error('SharePoint note create failed:', e);
+            }
         }
+
+        notes.push(note);
+        saveLocal(); // Always cache
         return note;
     }
 
@@ -196,28 +229,57 @@ const Deals = (() => {
         return daysSinceUpdate > stage.alertDays;
     }
 
+    // Field mapping: local camelCase ↔ SharePoint PascalCase
+    const FIELD_MAP = {
+        clientName: 'ClientName', clientPhone: 'ClientPhone', clientEmail: 'ClientEmail',
+        clientAddress: 'ClientAddress', accountNumber: 'AccountNumber', clientType: 'ClientType', leadSource: 'LeadSource',
+        projectType: 'ProjectType', products: 'Products', description: 'Description',
+        quoteAmount: 'QuoteAmount', contractAmount: 'ContractAmount', stage: 'Stage',
+        status: 'Status', assignedTo: 'AssignedTo', mecinovQuoteNum: 'MecinovQuoteNum',
+        mecinovOrderNum: 'MecinovOrderNum', mecinovInvoiceNum: 'MecinovInvoiceNum',
+        avantageInvoiceNum: 'AvantageInvoiceNum', shopifyOrderNum: 'ShopifyOrderNum',
+        depositRequired: 'DepositRequired', depositReceived: 'DepositReceived',
+        paymentStatus: 'PaymentStatus', leadDate: 'LeadDate', assignDate: 'AssignDate',
+        quoteSentDate: 'QuoteSentDate', lastFollowUp: 'LastFollowUp',
+        contractSignDate: 'ContractSignDate', depositDate: 'DepositDate',
+        supplierOrderDate: 'SupplierOrderDate', measurementDate: 'MeasurementDate',
+        installDate: 'InstallDate', completedDate: 'CompletedDate',
+        followUpCount: 'FollowUpCount', lostReason: 'LostReason',
+    };
+
+    // Reverse map: SharePoint PascalCase → local camelCase
+    const REVERSE_FIELD_MAP = {};
+    for (const [local, sp] of Object.entries(FIELD_MAP)) {
+        REVERSE_FIELD_MAP[sp] = local;
+    }
+
     // Map deal fields to SharePoint column names
     function mapToSharePoint(deal) {
         const map = {};
-        const fieldMap = {
-            clientName: 'ClientName', clientPhone: 'ClientPhone', clientEmail: 'ClientEmail',
-            clientAddress: 'ClientAddress', accountNumber: 'AccountNumber', clientType: 'ClientType', leadSource: 'LeadSource',
-            projectType: 'ProjectType', products: 'Products', description: 'Description',
-            quoteAmount: 'QuoteAmount', contractAmount: 'ContractAmount', stage: 'Stage',
-            status: 'Status', assignedTo: 'AssignedTo', mecinovQuoteNum: 'MecinovQuoteNum',
-            mecinovOrderNum: 'MecinovOrderNum', mecinovInvoiceNum: 'MecinovInvoiceNum',
-            avantageInvoiceNum: 'AvantageInvoiceNum', shopifyOrderNum: 'ShopifyOrderNum',
-            depositRequired: 'DepositRequired', depositReceived: 'DepositReceived',
-            paymentStatus: 'PaymentStatus', leadDate: 'LeadDate', assignDate: 'AssignDate',
-            quoteSentDate: 'QuoteSentDate', lastFollowUp: 'LastFollowUp',
-            contractSignDate: 'ContractSignDate', depositDate: 'DepositDate',
-            supplierOrderDate: 'SupplierOrderDate', measurementDate: 'MeasurementDate',
-            installDate: 'InstallDate', completedDate: 'CompletedDate',
-        };
-        for (const [key, spKey] of Object.entries(fieldMap)) {
+        for (const [key, spKey] of Object.entries(FIELD_MAP)) {
             if (deal[key] !== undefined) map[spKey] = deal[key];
         }
         return map;
+    }
+
+    // Map SharePoint item back to local deal format
+    function mapFromSharePoint(spItem) {
+        const deal = { id: spItem.id, _spId: spItem.id };
+        for (const [spKey, localKey] of Object.entries(REVERSE_FIELD_MAP)) {
+            if (spItem[spKey] !== undefined && spItem[spKey] !== null) {
+                deal[localKey] = spItem[spKey];
+            }
+        }
+        // Preserve metadata fields
+        deal.createdAt = spItem.Created || spItem.createdAt || '';
+        deal.updatedAt = spItem.Modified || spItem.updatedAt || '';
+        // Ensure numeric fields
+        if (deal.stage) deal.stage = Number(deal.stage);
+        if (deal.quoteAmount) deal.quoteAmount = Number(deal.quoteAmount);
+        if (deal.contractAmount) deal.contractAmount = Number(deal.contractAmount);
+        if (deal.depositRequired) deal.depositRequired = Number(deal.depositRequired);
+        if (deal.followUpCount) deal.followUpCount = Number(deal.followUpCount);
+        return deal;
     }
 
     // Stats helpers
@@ -368,10 +430,24 @@ const Deals = (() => {
             await addNote(dealId, 'Pas de reponse', { type: 'noreply', icon: '' });
         }
 
-        if (Auth.useLocalStorage()) {
-            saveLocal();
+        saveLocal(); // Always cache locally
+
+        if (!Auth.useLocalStorage()) {
+            try {
+                const spId = deal._spId || dealId;
+                await Graph.updateListItem('CRM_Deals', spId, mapToSharePoint({
+                    followUpCount: deal.followUpCount,
+                    lastFollowUp: deal.lastFollowUp,
+                    updatedAt: deal.updatedAt,
+                }));
+            } catch (e) {
+                console.error('SharePoint quickAction sync failed:', e);
+            }
         }
     }
+
+    // Export all deals for migration
+    function getAllRaw() { return { deals, notes }; }
 
     return {
         loadDeals,
@@ -398,5 +474,8 @@ const Deals = (() => {
         formatMoney,
         formatDate,
         STAGES,
+        getAllRaw,
+        mapToSharePoint,
+        mapFromSharePoint,
     };
 })();
