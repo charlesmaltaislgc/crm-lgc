@@ -23,14 +23,19 @@ const Auth = (() => {
         };
     };
 
+    // Core scopes (no admin consent required)
     const scopes = [
         'User.Read',
         'Sites.ReadWrite.All',
         'Mail.ReadWrite',
-        'Mail.ReadWrite.Shared',
         'Mail.Send',
-        'Mail.Send.Shared',
         'Calendars.ReadWrite'
+    ];
+
+    // Shared mailbox scopes (require admin consent — requested separately)
+    const sharedScopes = [
+        'Mail.ReadWrite.Shared',
+        'Mail.Send.Shared',
     ];
 
     // Équipe LGC
