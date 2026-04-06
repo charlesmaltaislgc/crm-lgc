@@ -78,6 +78,48 @@ const Graph = (() => {
                 { name: 'SignDate', dateTime: {} },
                 { name: 'SignerName', text: {} },
                 { name: 'SignerIP', text: {} },
+                { name: 'SignMethod', text: {} },
+                { name: 'DocuSignEnvelopeId', text: {} },
+                { name: 'DocuSignStatus', text: {} },
+                { name: 'DocuSignSentAt', dateTime: {} },
+                { name: 'DocuSignSignedAt', dateTime: {} },
+                { name: 'DocuSignDocumentUrl', text: {} },
+            ]
+        },
+        CRM_ErrorLog: {
+            displayName: 'CRM_ErrorLog',
+            columns: [
+                { name: 'Timestamp', dateTime: {} },
+                { name: 'ErrorMessage', text: { allowMultipleLines: true } },
+                { name: 'Stack', text: { allowMultipleLines: true } },
+                { name: 'UserName', text: {} },
+                { name: 'ViewName', text: {} },
+                { name: 'UserAgent', text: {} },
+            ]
+        },
+        CRM_AgentMemory: {
+            displayName: 'CRM_AgentMemory',
+            columns: [
+                { name: 'MemoryType', choice: { choices: ['pattern', 'decision', 'feedback'] } },
+                { name: 'MemoryData', text: { allowMultipleLines: true } },
+                { name: 'CreatedAt', dateTime: {} },
+                { name: 'RelatedDealId', text: {} },
+            ]
+        },
+        CRM_ShopifyOrders: {
+            displayName: 'CRM_ShopifyOrders',
+            columns: [
+                { name: 'OrderId', text: {} },
+                { name: 'OrderNumber', text: {} },
+                { name: 'CustomerName', text: {} },
+                { name: 'CustomerEmail', text: {} },
+                { name: 'Amount', number: {} },
+                { name: 'Currency', text: {} },
+                { name: 'Status', text: {} },
+                { name: 'OrderDate', dateTime: {} },
+                { name: 'Items', text: { allowMultipleLines: true } },
+                { name: 'IsCounterSale', boolean: {} },
+                { name: 'LinkedDealId', text: {} },
             ]
         }
     };

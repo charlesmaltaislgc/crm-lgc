@@ -1,0 +1,45 @@
+# ============================================================================
+# CRM LGC - Cloudflare Worker Configuration
+# ============================================================================
+
+name = "crm-lgc-api"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+# --------------------------------------------------------------------------
+# Routes (decommenter et ajuster selon votre domaine)
+# --------------------------------------------------------------------------
+# [routes]
+# pattern = "api.votredomaine.com/*"
+# zone_name = "votredomaine.com"
+
+# --------------------------------------------------------------------------
+# Variables d'environnement (valeurs non sensibles seulement)
+# Pour les secrets, utiliser: wrangler secret put NOM_VARIABLE
+# --------------------------------------------------------------------------
+[vars]
+ALLOWED_ORIGIN = "*"
+SHOPIFY_STORE = "votre-boutique"
+DOCUSIGN_BASE_URL = "https://account-d.docusign.com"
+
+# --------------------------------------------------------------------------
+# Secrets a configurer via CLI (ne PAS mettre ici):
+#   wrangler secret put SHOPIFY_TOKEN
+#   wrangler secret put DOCUSIGN_CLIENT_ID
+#   wrangler secret put DOCUSIGN_CLIENT_SECRET
+# --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# KV Namespace - stockage cle/valeur pour suivi DocuSign, cache, etc.
+# Creer d'abord:  wrangler kv namespace create "CRM_DATA"
+# Puis remplacer l'id ci-dessous par celui retourne.
+# --------------------------------------------------------------------------
+[[kv_namespaces]]
+binding = "CRM_DATA"
+id = "REMPLACER_PAR_VOTRE_KV_NAMESPACE_ID"
+
+# --------------------------------------------------------------------------
+# Cron Triggers - tache planifiee toutes les 5 minutes
+# --------------------------------------------------------------------------
+[triggers]
+crons = ["*/5 * * * *"]

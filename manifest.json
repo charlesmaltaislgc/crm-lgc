@@ -4,19 +4,21 @@
     "description": "CRM sur mesure pour Portes et Fenêtres LGC",
     "start_url": "./index.html",
     "display": "standalone",
-    "background_color": "#1a1a1a",
-    "theme_color": "#c0392b",
+    "background_color": "#1e293b",
+    "theme_color": "#B22234",
     "orientation": "any",
     "icons": [
         {
-            "src": "assets/icon-192.png",
+            "src": "assets/logo.png",
             "sizes": "192x192",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any maskable"
         },
         {
-            "src": "assets/icon-512.png",
+            "src": "assets/logo.png",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any maskable"
         }
     ],
     "categories": ["business", "productivity"]

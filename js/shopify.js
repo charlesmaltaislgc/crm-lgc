@@ -1,20 +1,105 @@
 // ===== CRM LGC - Shopify Integration Module =====
 // Pull payments from Shopify, track counter sales
+// Supports: Cloudflare Worker proxy, SharePoint persistence, auto-sync
+
+/*
+ * ===== CLOUDFLARE WORKER PROXY =====
+ * Deploy this code as a Cloudflare Worker to bypass CORS restrictions.
+ * Then set localStorage item 'crm_shopifyProxy' to your worker URL
+ * (e.g. https://shopify-proxy.your-domain.workers.dev)
+ *
+ * --- worker.js ---
+ *
+ * export default {
+ *   async fetch(request, env) {
+ *     const url = new URL(request.url);
+ *
+ *     // CORS preflight
+ *     if (request.method === 'OPTIONS') {
+ *       return new Response(null, {
+ *         headers: {
+ *           'Access-Control-Allow-Origin': '*',
+ *           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+ *           'Access-Control-Allow-Headers': 'Content-Type, X-Shopify-Store, X-Shopify-Token',
+ *           'Access-Control-Max-Age': '86400',
+ *         }
+ *       });
+ *     }
+ *
+ *     const store = request.headers.get('X-Shopify-Store');
+ *     const token = request.headers.get('X-Shopify-Token');
+ *
+ *     if (!store || !token) {
+ *       return new Response(JSON.stringify({ error: 'Missing store or token headers' }), {
+ *         status: 400,
+ *         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+ *       });
+ *     }
+ *
+ *     // Forward the request path to Shopify Admin API
+ *     const shopifyPath = url.pathname === '/' ? '/admin/api/2024-01/orders.json?status=any&limit=50' : url.pathname + url.search;
+ *     const shopifyUrl = `https://${store}${shopifyPath}`;
+ *
+ *     try {
+ *       const shopifyResponse = await fetch(shopifyUrl, {
+ *         method: request.method,
+ *         headers: {
+ *           'X-Shopify-Access-Token': token,
+ *           'Content-Type': 'application/json',
+ *         },
+ *         body: request.method !== 'GET' ? await request.text() : undefined,
+ *       });
+ *
+ *       const data = await shopifyResponse.text();
+ *       return new Response(data, {
+ *         status: shopifyResponse.status,
+ *         headers: {
+ *           'Content-Type': 'application/json',
+ *           'Access-Control-Allow-Origin': '*',
+ *         }
+ *       });
+ *     } catch (e) {
+ *       return new Response(JSON.stringify({ error: e.message }), {
+ *         status: 502,
+ *         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+ *       });
+ *     }
+ *   }
+ * };
+ *
+ * --- end worker.js ---
+ */
 
 const Shopify = (() => {
     const STORAGE_KEY = 'crm_shopify_orders';
+    const SP_LIST = 'CRM_ShopifyOrders';
     let orders = [];
+    let syncInterval = null;
+
+    // ===== LOAD / SAVE =====
 
     async function loadOrders() {
-        const shopifyStore = localStorage.getItem('crm_shopifyStore');
-        if (!shopifyStore || Auth.useLocalStorage()) {
-            // No Shopify configured or using local storage — load demo/saved data
+        if (Auth.useLocalStorage()) {
+            // localStorage-only mode: load from cache or generate demo data
             const saved = localStorage.getItem(STORAGE_KEY);
             orders = saved ? JSON.parse(saved) : generateDemoOrders();
             if (!saved) saveLocal();
         } else {
-            await fetchFromShopify();
+            // SharePoint mode: load from SharePoint, fallback to localStorage
+            try {
+                const spItems = await Graph.getListItems(SP_LIST);
+                orders = spItems.map(item => mapFromSharePoint(item));
+                // Write-through to localStorage as cache
+                saveLocal();
+            } catch (e) {
+                console.error('Erreur chargement SharePoint Shopify, fallback localStorage:', e);
+                const saved = localStorage.getItem(STORAGE_KEY);
+                orders = saved ? JSON.parse(saved) : generateDemoOrders();
+                if (!saved) saveLocal();
+            }
         }
+        // Auto-link orders to deals after loading
+        autoLinkOrders();
         return orders;
     }
 
@@ -22,29 +107,97 @@ const Shopify = (() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
     }
 
+    // ===== SHAREPOINT MAPPING =====
+
+    function mapFromSharePoint(item) {
+        return {
+            id: item.OrderId || item.id,
+            _spId: item.id,
+            orderNumber: item.OrderNumber || '',
+            customerName: item.CustomerName || '',
+            customerEmail: item.CustomerEmail || '',
+            amount: parseFloat(item.Amount) || 0,
+            currency: item.Currency || 'CAD',
+            status: item.Status || '',
+            date: item.OrderDate || '',
+            items: item.Items || '',
+            isCounterSale: item.IsCounterSale === true || item.IsCounterSale === 'true',
+            linkedDealId: item.LinkedDealId || null,
+        };
+    }
+
+    function mapToSharePoint(order) {
+        return {
+            OrderId: order.id,
+            OrderNumber: order.orderNumber || '',
+            CustomerName: order.customerName || '',
+            CustomerEmail: order.customerEmail || '',
+            Amount: order.amount || 0,
+            Currency: order.currency || 'CAD',
+            Status: order.status || '',
+            OrderDate: order.date || '',
+            Items: (order.items || '').substring(0, 255),
+            IsCounterSale: !!order.isCounterSale,
+            LinkedDealId: order.linkedDealId || '',
+        };
+    }
+
+    async function saveToSharePoint(order) {
+        if (Auth.useLocalStorage()) return;
+        try {
+            if (order._spId) {
+                await Graph.updateListItem(SP_LIST, order._spId, mapToSharePoint(order));
+            } else {
+                const created = await Graph.createListItem(SP_LIST, mapToSharePoint(order));
+                if (created) order._spId = created.id;
+            }
+        } catch (e) {
+            console.error('Erreur sauvegarde SharePoint Shopify:', e);
+        }
+    }
+
+    // ===== SHOPIFY API (via proxy or direct) =====
+
+    function getProxyUrl() {
+        return localStorage.getItem('crm_shopifyProxy') || '';
+    }
+
     async function fetchFromShopify() {
         const storeUrl = localStorage.getItem('crm_shopifyStore');
         const token = localStorage.getItem('crm_shopifyToken');
 
         if (!storeUrl || !token) {
-            console.warn('Shopify not configured');
+            console.warn('Shopify non configuré');
             return;
         }
 
-        // Note: Shopify Admin API requires server-side proxy for CORS
-        // In production, this would call a proxy endpoint
-        // For now, this shows the intended integration pattern
+        const proxyUrl = getProxyUrl();
+
         try {
-            const response = await fetch(`https://${storeUrl}/admin/api/2024-01/orders.json?status=any&limit=50`, {
-                headers: {
-                    'X-Shopify-Access-Token': token,
-                    'Content-Type': 'application/json',
-                }
-            });
+            let response;
+
+            if (proxyUrl) {
+                // Use Cloudflare Worker proxy
+                response = await fetch(`${proxyUrl}/admin/api/2024-01/orders.json?status=any&limit=50`, {
+                    headers: {
+                        'X-Shopify-Store': storeUrl,
+                        'X-Shopify-Token': token,
+                        'Content-Type': 'application/json',
+                    }
+                });
+            } else {
+                // Direct call (will be CORS-blocked in browser, but works server-side)
+                response = await fetch(`https://${storeUrl}/admin/api/2024-01/orders.json?status=any&limit=50`, {
+                    headers: {
+                        'X-Shopify-Access-Token': token,
+                        'Content-Type': 'application/json',
+                    }
+                });
+            }
 
             if (response.ok) {
                 const data = await response.json();
-                orders = data.orders.map(order => ({
+                const fetchedOrders = data.orders.map(order => ({
                     id: order.id.toString(),
                     orderNumber: `#${order.order_number}`,
                     customerName: order.customer ? `${order.customer.first_name} ${order.customer.last_name}` : 'Client comptoir',
@@ -57,11 +210,111 @@ const Shopify = (() => {
                     isCounterSale: !order.customer?.email,
                     linkedDealId: null,
                 }));
+
+                // Merge: preserve existing linkedDealId and _spId
+                const existingMap = {};
+                orders.forEach(o => { existingMap[o.id] = o; });
+
+                for (const fetched of fetchedOrders) {
+                    const existing = existingMap[fetched.id];
+                    if (existing) {
+                        fetched.linkedDealId = existing.linkedDealId;
+                        fetched._spId = existing._spId;
+                    }
+                }
+
+                orders = fetchedOrders;
+                autoLinkOrders();
+
+                // Persist
+                saveLocal();
+                if (!Auth.useLocalStorage()) {
+                    for (const order of orders) {
+                        await saveToSharePoint(order);
+                    }
+                }
+
+                console.log(`Shopify sync: ${orders.length} commandes chargées`);
             }
         } catch (e) {
-            console.warn('Shopify fetch failed (CORS expected in browser):', e.message);
+            console.warn('Shopify fetch échoué' + (proxyUrl ? '' : ' (CORS attendu en navigateur)') + ':', e.message);
         }
     }
+
+    // ===== AUTO-SYNC =====
+
+    function startAutoSync() {
+        stopAutoSync();
+        // Sync every 5 minutes when tab is active
+        syncInterval = setInterval(() => {
+            if (!document.hidden) {
+                refreshOrders();
+            }
+        }, 5 * 60 * 1000);
+    }
+
+    function stopAutoSync() {
+        if (syncInterval) {
+            clearInterval(syncInterval);
+            syncInterval = null;
+        }
+    }
+
+    async function refreshOrders() {
+        const storeUrl = localStorage.getItem('crm_shopifyStore');
+        const token = localStorage.getItem('crm_shopifyToken');
+        if (storeUrl && token) {
+            await fetchFromShopify();
+            if (typeof App !== 'undefined' && App.showToast) {
+                App.showToast('Commandes Shopify synchronisées', 'success');
+            }
+        }
+        return orders;
+    }
+
+    // ===== AUTO-LINK ORDERS TO DEALS =====
+
+    function autoLinkOrders() {
+        if (typeof Deals === 'undefined' || !Deals.getAll) return;
+        const allDeals = Deals.getAll();
+        if (!allDeals || allDeals.length === 0) return;
+
+        let linked = 0;
+        for (const order of orders) {
+            if (order.linkedDealId || order.isCounterSale) continue;
+
+            // Try to match by email first
+            if (order.customerEmail) {
+                const emailMatch = allDeals.find(d =>
+                    d.clientEmail && d.clientEmail.toLowerCase() === order.customerEmail.toLowerCase()
+                );
+                if (emailMatch) {
+                    order.linkedDealId = emailMatch.id;
+                    linked++;
+                    continue;
+                }
+            }
+
+            // Try to match by customer name
+            if (order.customerName && order.customerName !== 'Client comptoir') {
+                const nameLower = order.customerName.toLowerCase().trim();
+                const nameMatch = allDeals.find(d =>
+                    d.clientName && d.clientName.toLowerCase().trim() === nameLower
+                );
+                if (nameMatch) {
+                    order.linkedDealId = nameMatch.id;
+                    linked++;
+                }
+            }
+        }
+
+        if (linked > 0) {
+            saveLocal();
+            console.log(`Auto-link: ${linked} commande(s) liée(s) à des deals`);
+        }
+    }
+
+    // ===== CONNECTION TEST =====
 
     async function testConnection() {
         const storeUrl = localStorage.getItem('crm_shopifyStore');
@@ -72,27 +325,49 @@ const Shopify = (() => {
             return false;
         }
 
+        const proxyUrl = getProxyUrl();
+
         try {
-            const response = await fetch(`https://${storeUrl}/admin/api/2024-01/shop.json`, {
-                headers: { 'X-Shopify-Access-Token': token }
-            });
+            let response;
+
+            if (proxyUrl) {
+                response = await fetch(`${proxyUrl}/admin/api/2024-01/shop.json`, {
+                    headers: {
+                        'X-Shopify-Store': storeUrl,
+                        'X-Shopify-Token': token,
+                    }
+                });
+            } else {
+                response = await fetch(`https://${storeUrl}/admin/api/2024-01/shop.json`, {
+                    headers: { 'X-Shopify-Access-Token': token }
+                });
+            }
+
             if (response.ok) {
                 App.showToast('Connexion Shopify réussie!', 'success');
+                startAutoSync();
                 return true;
             }
             App.showToast('Connexion échouée - vérifiez les identifiants', 'error');
             return false;
         } catch (e) {
-            App.showToast('Erreur de connexion (CORS) - un proxy serveur sera nécessaire', 'warning');
+            if (proxyUrl) {
+                App.showToast('Erreur de connexion au proxy Shopify', 'error');
+            } else {
+                App.showToast('Erreur de connexion (CORS) - configurez un proxy dans Paramètres', 'warning');
+            }
             return false;
         }
     }
+
+    // ===== DEAL LINKING =====
 
     function linkToDeal(orderId, dealId) {
         const idx = orders.findIndex(o => o.id === orderId);
         if (idx !== -1) {
             orders[idx].linkedDealId = dealId;
-            if (Auth.useLocalStorage()) saveLocal();
+            saveLocal();
+            saveToSharePoint(orders[idx]);
             App.showToast('Paiement Shopify lié au deal', 'success');
         }
     }
@@ -100,6 +375,8 @@ const Shopify = (() => {
     function getOrdersForDeal(dealId) {
         return orders.filter(o => o.linkedDealId === dealId);
     }
+
+    // ===== STATS =====
 
     function getMonthlyTotal() {
         const now = new Date();
@@ -134,6 +411,28 @@ const Shopify = (() => {
         return weeks;
     }
 
+    function getOrderStats() {
+        const paidOrders = orders.filter(o => o.status === 'paid');
+        const counterSales = paidOrders.filter(o => o.isCounterSale);
+        const projectSales = paidOrders.filter(o => !o.isCounterSale);
+
+        const totalRevenue = paidOrders.reduce((sum, o) => sum + (o.amount || 0), 0);
+        const counterSalesRevenue = counterSales.reduce((sum, o) => sum + (o.amount || 0), 0);
+        const projectRevenue = projectSales.reduce((sum, o) => sum + (o.amount || 0), 0);
+        const orderCount = paidOrders.length;
+        const avgOrderValue = orderCount > 0 ? totalRevenue / orderCount : 0;
+
+        return {
+            totalRevenue,
+            counterSalesRevenue,
+            projectRevenue,
+            avgOrderValue,
+            orderCount,
+        };
+    }
+
+    // ===== RENDER =====
+
     function renderInPayments(container) {
         // Update shopify stat
         const shopifyStat = document.getElementById('pay-shopify');
@@ -149,9 +448,19 @@ const Shopify = (() => {
             return;
         }
 
+        // Sync button
+        let html = `
+            <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+                <button onclick="Shopify.refreshOrders().then(() => { if(typeof Payments !== 'undefined' && Payments.render) Payments.render(); })"
+                    style="padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-card);cursor:pointer;font-size:12px;display:flex;align-items:center;gap:6px;color:var(--text-primary)">
+                    &#x21bb; Sync Shopify
+                </button>
+            </div>
+        `;
+
         // Weekly summary
         const weeks = getWeeklyTotals();
-        let html = `
+        html += `
             <div style="display:flex;gap:12px;margin-bottom:20px">
                 ${weeks.map(w => `
                     <div style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
@@ -193,6 +502,8 @@ const Shopify = (() => {
         container.innerHTML = html;
     }
 
+    // ===== DEMO DATA =====
+
     function generateDemoOrders() {
         const now = new Date();
         return [
@@ -215,5 +526,11 @@ const Shopify = (() => {
         getMonthlyTotal,
         getWeeklyTotals,
         renderInPayments,
+        generateDemoOrders,
+        refreshOrders,
+        getOrderStats,
+        saveToSharePoint,
+        startAutoSync,
+        stopAutoSync,
     };
 })();

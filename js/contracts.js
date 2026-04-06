@@ -1,14 +1,363 @@
 // ===== CRM LGC - Electronic Contracts Module =====
-// E-signature with signature pad, PDF preview, contract generation
+// DocuSign integration for all contract signatures
+// Native canvas signature removed — DocuSign is the only signature method
 
 const Contracts = (() => {
     const STORAGE_KEY = 'crm_contracts';
     let contracts = [];
-    let signaturePadCanvas = null;
-    let signatureCtx = null;
-    let isDrawing = false;
-    let lastX = 0;
-    let lastY = 0;
+
+    // DocuSign polling interval reference
+    let _docusignPollInterval = null;
+
+    // ===== DOCUSIGN HELPERS =====
+
+    function isDocuSignConfigured() {
+        return localStorage.getItem('crm_docusign_enabled') === 'true'
+            && !!localStorage.getItem('crm_docusign_integration_key')
+            && !!localStorage.getItem('crm_docusign_account_id');
+    }
+
+    function getDocuSignAccessToken() {
+        return sessionStorage.getItem('crm_docusign_access_token') || null;
+    }
+
+    function isDocuSignConnected() {
+        return isDocuSignConfigured() && !!getDocuSignAccessToken();
+    }
+
+    function getDocuSignBaseUrl() {
+        return localStorage.getItem('crm_docusign_base_url') || 'https://demo.docusign.net';
+    }
+
+    function getDocuSignApiBase() {
+        const base = getDocuSignBaseUrl().replace(/\/+$/, '');
+        const accountId = localStorage.getItem('crm_docusign_account_id');
+        return `${base}/restapi/v2.1/accounts/${accountId}`;
+    }
+
+    async function docuSignFetch(endpoint, options = {}) {
+        const token = getDocuSignAccessToken();
+        if (!token) throw new Error('DocuSign non connecté. Veuillez vous authentifier dans Paramètres.');
+        const url = `${getDocuSignApiBase()}${endpoint}`;
+        const resp = await fetch(url, {
+            ...options,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                ...(options.headers || {}),
+            },
+        });
+        if (resp.status === 401) {
+            sessionStorage.removeItem('crm_docusign_access_token');
+            throw new Error('Session DocuSign expirée. Reconnectez-vous dans Paramètres.');
+        }
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.message || `DocuSign erreur ${resp.status}`);
+        }
+        return resp.json();
+    }
+
+    // ===== DOCUSIGN OAUTH (Implicit Grant) =====
+
+    function startDocuSignOAuth() {
+        const clientId = localStorage.getItem('crm_docusign_integration_key');
+        const redirectUri = localStorage.getItem('crm_docusign_redirect_uri') || window.location.origin + window.location.pathname;
+        const base = getDocuSignBaseUrl().replace('demo.docusign.net', 'account-d.docusign.com').replace('www.docusign.net', 'account.docusign.com');
+        const authUrl = `${base}/oauth/auth?` + new URLSearchParams({
+            response_type: 'token',
+            scope: 'signature',
+            client_id: clientId,
+            redirect_uri: redirectUri,
+            state: 'docusign_oauth',
+        }).toString();
+        window.location.href = authUrl;
+    }
+
+    function handleOAuthCallback() {
+        // Check for DocuSign implicit grant token in URL hash
+        const hash = window.location.hash;
+        if (!hash || !hash.includes('access_token')) return false;
+        const params = new URLSearchParams(hash.substring(1));
+        const token = params.get('access_token');
+        const state = params.get('state');
+        if (token && state === 'docusign_oauth') {
+            sessionStorage.setItem('crm_docusign_access_token', token);
+            // Clean hash from URL
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+            App.showToast('DocuSign connecté avec succès!', 'success');
+            return true;
+        }
+        return false;
+    }
+
+    // ===== DOCUSIGN ENVELOPE CREATION =====
+
+    async function sendViaDocuSign(contractId, pdfBase64, pdfName) {
+        const contract = contracts.find(c => c.id === contractId);
+        if (!contract) throw new Error('Contrat introuvable');
+
+        if (!isDocuSignConnected()) {
+            throw new Error('DocuSign non connecté. Configurez et connectez DocuSign dans Paramètres.');
+        }
+
+        const deal = Deals.getById(contract.dealId);
+        const signerEmail = contract.clientEmail;
+        const signerName = contract.clientName;
+
+        if (!signerEmail) {
+            throw new Error('Le courriel du client est requis pour DocuSign.');
+        }
+
+        const ccEmail = Auth.getUser()?.email || '';
+        const ccName = Auth.getUser()?.name || 'Vendeur LGC';
+
+        // Build envelope definition
+        const envelopeDefinition = {
+            emailSubject: `Contrat à signer — ${signerName} — Portes et Fenêtres LGC`,
+            emailBlurb: `Bonjour ${signerName},\n\nVeuillez signer le contrat ci-joint pour ${contract.description}.\n\nMerci de votre confiance,\nPortes et Fenêtres LGC`,
+            documents: [{
+                documentBase64: pdfBase64,
+                name: pdfName || `Contrat_${signerName.replace(/\s/g, '_')}.pdf`,
+                fileExtension: 'pdf',
+                documentId: '1',
+            }],
+            recipients: {
+                signers: [{
+                    email: signerEmail,
+                    name: signerName,
+                    recipientId: '1',
+                    routingOrder: '1',
+                    tabs: {
+                        signHereTabs: [{
+                            anchorString: '/sn1/',
+                            anchorUnits: 'pixels',
+                            anchorXOffset: '0',
+                            anchorYOffset: '0',
+                        }, {
+                            // Fallback: place at bottom of last page
+                            documentId: '1',
+                            pageNumber: '1',
+                            xPosition: '100',
+                            yPosition: '600',
+                        }],
+                        dateSignedTabs: [{
+                            documentId: '1',
+                            pageNumber: '1',
+                            xPosition: '300',
+                            yPosition: '650',
+                        }],
+                        fullNameTabs: [{
+                            documentId: '1',
+                            pageNumber: '1',
+                            xPosition: '100',
+                            yPosition: '650',
+                        }],
+                    },
+                }],
+                carbonCopies: ccEmail ? [{
+                    email: ccEmail,
+                    name: ccName,
+                    recipientId: '2',
+                    routingOrder: '2',
+                }] : [],
+            },
+            status: 'sent',
+        };
+
+        const result = await docuSignFetch('/envelopes', {
+            method: 'POST',
+            body: JSON.stringify(envelopeDefinition),
+        });
+
+        // Update contract record with DocuSign info
+        const idx = contracts.findIndex(c => c.id === contractId);
+        if (idx !== -1) {
+            contracts[idx] = {
+                ...contracts[idx],
+                signMethod: 'docusign',
+                docusignEnvelopeId: result.envelopeId,
+                docusignStatus: 'sent',
+                docusignSentAt: new Date().toISOString(),
+                docusignSignedAt: null,
+                docusignDocumentUrl: null,
+            };
+            await _saveContract(contracts[idx]);
+        }
+
+        App.showToast(`Contrat envoyé via DocuSign à ${signerEmail}`, 'success');
+        App.addActivity('contract', `Contrat envoyé via DocuSign à ${signerEmail}`, contract.dealId);
+
+        // Start polling for this contract
+        startDocuSignPolling();
+
+        return result;
+    }
+
+    // ===== DOCUSIGN STATUS CHECKING =====
+
+    async function checkDocuSignStatus(contractId) {
+        const contract = contracts.find(c => c.id === contractId);
+        if (!contract || !contract.docusignEnvelopeId) return null;
+        if (!isDocuSignConnected()) return null;
+
+        try {
+            const result = await docuSignFetch(`/envelopes/${contract.docusignEnvelopeId}`);
+            const newStatus = result.status; // sent, delivered, viewed, completed, declined, voided
+
+            const idx = contracts.findIndex(c => c.id === contractId);
+            if (idx === -1) return null;
+
+            // Map DocuSign status
+            const statusMap = {
+                sent: 'sent',
+                delivered: 'delivered',
+                viewed: 'viewed', // not in original spec but useful
+                completed: 'signed',
+                declined: 'declined',
+                voided: 'voided',
+            };
+            const mappedStatus = statusMap[newStatus] || newStatus;
+
+            contracts[idx].docusignStatus = mappedStatus;
+
+            if (newStatus === 'completed' && !contracts[idx].signed) {
+                contracts[idx].signed = true;
+                contracts[idx].signDate = result.completedDateTime || new Date().toISOString();
+                contracts[idx].docusignSignedAt = result.completedDateTime || new Date().toISOString();
+                contracts[idx].signerName = contract.clientName;
+                contracts[idx].signMethod = 'docusign';
+
+                // Try to download the signed document
+                try {
+                    const docResult = await docuSignFetch(`/envelopes/${contract.docusignEnvelopeId}/documents/1`, {
+                        headers: { 'Accept': 'application/pdf' },
+                    });
+                    // docResult would be the PDF - store a reference
+                    contracts[idx].docusignDocumentUrl = `${getDocuSignApiBase()}/envelopes/${contract.docusignEnvelopeId}/documents/1`;
+                } catch (e) {
+                    // Non-blocking: document download is optional
+                    console.warn('DocuSign document download failed:', e);
+                }
+
+                await _saveContract(contracts[idx]);
+
+                // Update deal stage
+                const deal = Deals.getById(contracts[idx].dealId);
+                if (deal) {
+                    const updates = { contractSignDate: new Date().toISOString().split('T')[0] };
+                    if (deal.stage === 8) updates.stage = 9;
+                    await Deals.update(deal.id, updates);
+                }
+
+                App.showToast(`Contrat signé via DocuSign: ${contract.clientName}`, 'success');
+                App.addActivity('contract', `Contrat signé via DocuSign par ${contract.clientName}`, contract.dealId);
+                render('pending');
+            } else {
+                await _saveContract(contracts[idx]);
+            }
+
+            return mappedStatus;
+        } catch (e) {
+            console.warn('DocuSign status check failed:', e.message);
+            return null;
+        }
+    }
+
+    async function checkAllPendingDocuSign() {
+        const pendingDS = contracts.filter(c =>
+            c.signMethod === 'docusign'
+            && !c.signed
+            && c.docusignEnvelopeId
+            && c.docusignStatus !== 'declined'
+            && c.docusignStatus !== 'voided'
+        );
+        for (const contract of pendingDS) {
+            await checkDocuSignStatus(contract.id);
+        }
+    }
+
+    function startDocuSignPolling() {
+        if (_docusignPollInterval) return; // Already polling
+        if (!isDocuSignConnected()) return;
+
+        const hasPending = contracts.some(c =>
+            c.signMethod === 'docusign'
+            && !c.signed
+            && c.docusignEnvelopeId
+            && c.docusignStatus !== 'declined'
+            && c.docusignStatus !== 'voided'
+        );
+        if (!hasPending) return;
+
+        _docusignPollInterval = setInterval(async () => {
+            await checkAllPendingDocuSign();
+            // Stop polling if no more pending
+            const stillPending = contracts.some(c =>
+                c.signMethod === 'docusign' && !c.signed && c.docusignEnvelopeId
+                && c.docusignStatus !== 'declined' && c.docusignStatus !== 'voided'
+            );
+            if (!stillPending) {
+                clearInterval(_docusignPollInterval);
+                _docusignPollInterval = null;
+            }
+        }, 120000); // Every 2 minutes
+    }
+
+    function stopDocuSignPolling() {
+        if (_docusignPollInterval) {
+            clearInterval(_docusignPollInterval);
+            _docusignPollInterval = null;
+        }
+    }
+
+    // ===== INTERNAL SAVE HELPER =====
+
+    async function _saveContract(contract) {
+        if (Auth.useLocalStorage()) {
+            saveLocal();
+        } else {
+            await Graph.updateListItem('CRM_Contracts', contract.id, {
+                Signed: contract.signed,
+                SignDate: contract.signDate,
+                SignerName: contract.signerName,
+                SignMethod: contract.signMethod || 'docusign',
+                DocuSignEnvelopeId: contract.docusignEnvelopeId || '',
+                DocuSignStatus: contract.docusignStatus || '',
+                DocuSignSentAt: contract.docusignSentAt || '',
+                DocuSignSignedAt: contract.docusignSignedAt || '',
+                DocuSignDocumentUrl: contract.docusignDocumentUrl || '',
+            });
+        }
+    }
+
+    // ===== DOCUSIGN STATUS LABEL HELPERS =====
+
+    function getDocuSignStatusLabel(status) {
+        const labels = {
+            sent: 'Envoyé',
+            delivered: 'Livré',
+            viewed: 'Consulté',
+            signed: 'Signé',
+            declined: 'Refusé',
+            voided: 'Annulé',
+        };
+        return labels[status] || status || '';
+    }
+
+    function getDocuSignStatusColor(status) {
+        const colors = {
+            sent: '#3b82f6',
+            delivered: '#8b5cf6',
+            viewed: '#f59e0b',
+            signed: '#10b981',
+            declined: '#ef4444',
+            voided: '#6b7280',
+        };
+        return colors[status] || '#6b7280';
+    }
+
+    // ===== LOAD / SAVE =====
 
     async function loadContracts() {
         if (Auth.useLocalStorage()) {
@@ -19,6 +368,15 @@ const Contracts = (() => {
         }
         // Check for externally signed contracts (signed via the standalone page)
         checkForNewSignatures();
+
+        // Handle DocuSign OAuth callback if present
+        handleOAuthCallback();
+
+        // Start DocuSign polling if needed
+        if (isDocuSignConnected()) {
+            startDocuSignPolling();
+        }
+
         return contracts;
     }
 
@@ -78,6 +436,13 @@ const Contracts = (() => {
             createdBy: Auth.getUser()?.name || '',
             amount: deal.contractAmount || deal.quoteAmount || 0,
             description: `Contrat pour ${deal.products === 'les-deux' ? 'portes et fenêtres' : deal.products || 'travaux'} - ${deal.clientAddress || ''}`,
+            // DocuSign fields
+            signMethod: 'docusign',
+            docusignEnvelopeId: null,
+            docusignStatus: null,
+            docusignSentAt: null,
+            docusignSignedAt: null,
+            docusignDocumentUrl: null,
         };
 
         if (Auth.useLocalStorage()) {
@@ -110,6 +475,7 @@ const Contracts = (() => {
             signerName: signerName,
             signerIP: 'N/A',
             signatureImage: signatureImage || null,
+            signMethod: contracts[idx].signMethod || 'docusign',
         };
 
         if (Auth.useLocalStorage()) {
@@ -119,6 +485,7 @@ const Contracts = (() => {
                 Signed: true,
                 SignDate: new Date().toISOString(),
                 SignerName: signerName,
+                SignMethod: contracts[idx].signMethod || 'docusign',
             });
         }
 
@@ -166,37 +533,54 @@ const Contracts = (() => {
         let headerHtml = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary" onclick="Contracts.openCreateContract()">+ Créer un contrat</button></div>';
         container.innerHTML = headerHtml + filtered.map(contract => {
             const deal = Deals.getById(contract.dealId);
+            const isDocuSign = contract.signMethod === 'docusign';
+
+            // DocuSign status badge
+            const statusColor = getDocuSignStatusColor(contract.docusignStatus);
+            const statusLabel = getDocuSignStatusLabel(contract.docusignStatus);
+            const docuSignBadge = contract.docusignEnvelopeId ? `
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}44">
+                    DocuSign: ${statusLabel}
+                </span>
+            ` : '';
+
             return `
                 <div class="task-item" style="cursor:pointer">
                     <div style="width:36px;height:36px;border-radius:50%;background:${contract.signed ? 'var(--success-light)' : 'var(--warning-light)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">
                         ${contract.signed ? '✅' : '✍️'}
                     </div>
                     <div class="task-info" onclick="App.openDeal('${contract.dealId}')">
-                        <div class="task-description">${contract.clientName}</div>
+                        <div class="task-description">
+                            ${contract.clientName}
+                            ${docuSignBadge}
+                        </div>
                         <div class="task-meta">
                             ${Deals.formatMoney(contract.amount)}
                             | ${contract.description || ''}
                             ${contract.signed
-                                ? ` | Signé le ${Deals.formatDate(contract.signDate)} par ${contract.signerName}`
+                                ? ` | Signé le ${Deals.formatDate(contract.signDate)} par ${contract.signerName} (DocuSign)`
                                 : ` | Créé le ${Deals.formatDate(contract.createdAt)} par ${contract.createdBy}`
                             }
                         </div>
                     </div>
                     <div style="display:flex;gap:6px;flex-shrink:0;flex-direction:column">
                         ${!contract.signed ? `
-                            <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); Contracts.openSignModal('${contract.id}')">
-                                Signer maintenant
-                            </button>
-                            <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); Contracts.copySignLink('${contract.id}')">
-                                Copier lien
-                            </button>
+                            ${!contract.docusignEnvelopeId ? `
+                                <button class="btn btn-sm btn-primary" style="background:#4e46e5" onclick="event.stopPropagation(); Contracts.openDocuSignSendModal('${contract.id}')">
+                                    Envoyer via DocuSign
+                                </button>
+                            ` : `
+                                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); Contracts.refreshDocuSignStatus('${contract.id}')">
+                                    Rafraichir statut
+                                </button>
+                            `}
                             <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); Contracts.sendSignEmail('${contract.id}')">
                                 Envoyer courriel
                             </button>
                         ` : `
-                            ${contract.signatureImage ? `
-                                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); Contracts.viewSignature('${contract.id}')">
-                                    Voir signature
+                            ${contract.docusignDocumentUrl ? `
+                                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); Contracts.downloadDocuSignDocument('${contract.id}')">
+                                    Document signe
                                 </button>
                             ` : ''}
                             <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); Contracts.downloadProof('${contract.id}')">
@@ -209,200 +593,194 @@ const Contracts = (() => {
         }).join('');
     }
 
-    // ===== SIGNATURE MODAL =====
+    // ===== SIGNATURE MODAL (DocuSign only) =====
     function openSignModal(contractId) {
+        // Redirect to DocuSign send modal — native signature removed
+        openDocuSignSendModal(contractId);
+    }
+
+    function _populateDocuSignFileSelect(contract) {
+        const container = document.getElementById('docusign-file-select');
+        if (!container) return;
+        const deal = Deals.getById(contract.dealId);
+        const attachments = deal ? App.getAttachments(deal.id) : [];
+        const pdfs = attachments.filter(a => a.name && a.name.toLowerCase().endsWith('.pdf'));
+
+        if (pdfs.length === 0) {
+            container.innerHTML = `<div style="padding:12px;background:var(--warning-light);border-radius:var(--radius);font-size:13px">
+                Aucun PDF trouvé dans ce deal. Ajoutez un PDF dans l'onglet Fichiers du deal avant d'envoyer via DocuSign.
+            </div>`;
+        } else {
+            container.innerHTML = `
+                <label style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-secondary);display:block;margin-bottom:6px">
+                    Document PDF à envoyer
+                </label>
+                ${pdfs.map(att => `
+                    <label class="contract-file-option" style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:4px;cursor:pointer">
+                        <input type="radio" name="docusign-attachment" value="${att.id}">
+                        <span style="flex:1">
+                            <span style="font-weight:500">📄 ${att.name}</span>
+                            <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${(att.size / 1024).toFixed(0)} Ko</span>
+                        </span>
+                    </label>
+                `).join('')}
+            `;
+            // Select first by default
+            const first = container.querySelector('input[type=radio]');
+            if (first) first.checked = true;
+        }
+    }
+
+    async function confirmSendDocuSign(contractId) {
         const contract = contracts.find(c => c.id === contractId);
         if (!contract) return;
 
+        if (!contract.clientEmail) {
+            App.showToast('Courriel du client requis pour DocuSign', 'error');
+            return;
+        }
+
+        // Get selected PDF attachment
+        const selectedRadio = document.querySelector('input[name="docusign-attachment"]:checked');
+        if (!selectedRadio) {
+            App.showToast('Sélectionnez un document PDF', 'error');
+            return;
+        }
+
         const deal = Deals.getById(contract.dealId);
+        const attachments = deal ? App.getAttachments(deal.id) : [];
+        const att = attachments.find(a => a.id === selectedRadio.value);
 
-        // Build modal content
-        const modalBody = `
-            <div class="sign-section">
-                <h3 style="margin-bottom:16px">Signature électronique</h3>
-
-                <div style="text-align:left;padding:16px;background:var(--bg);border-radius:var(--radius);margin-bottom:16px">
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
-                        <div><strong>Client:</strong> ${contract.clientName}</div>
-                        <div><strong>Montant:</strong> ${Deals.formatMoney(contract.amount)}</div>
-                        <div><strong>Courriel:</strong> ${contract.clientEmail || 'N/A'}</div>
-                        <div><strong>Téléphone:</strong> ${contract.clientPhone || 'N/A'}</div>
-                        <div style="grid-column:1/-1"><strong>Description:</strong> ${contract.description}</div>
-                        ${deal ? `<div style="grid-column:1/-1"><strong>Adresse:</strong> ${deal.clientAddress || 'N/A'}</div>` : ''}
-                        ${deal && deal.accountNumber ? `<div><strong># Compte Avantage:</strong> ${deal.accountNumber}</div>` : ''}
-                        ${deal && deal.mecinovQuoteNum ? `<div><strong># Soumission Mec-inov:</strong> ${deal.mecinovQuoteNum}</div>` : ''}
-                    </div>
-                </div>
-
-                <div style="margin-bottom:16px">
-                    <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;text-transform:uppercase">
-                        Nom du signataire *
-                    </label>
-                    <input type="text" id="sign-name-input" value="${contract.clientName}"
-                           style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px">
-                </div>
-
-                <div class="sign-pad">
-                    <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;text-transform:uppercase">
-                        Signature (dessinez avec la souris ou le doigt)
-                    </label>
-                    <canvas id="signature-canvas" width="500" height="150" style="border:2px solid var(--border);border-radius:var(--radius);cursor:crosshair;width:100%;background:white"></canvas>
-                    <div class="sign-pad-actions">
-                        <button class="btn btn-sm btn-outline" onclick="Contracts.clearSignature()">Effacer</button>
-                    </div>
-                </div>
-
-                <div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:var(--radius);font-size:12px;color:var(--text-secondary)">
-                    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
-                        <input type="checkbox" id="sign-accept-checkbox" style="margin-top:2px">
-                        <span>J'accepte les termes de ce contrat et confirme que la signature ci-dessus est la mienne.
-                        Je comprends que cette signature électronique a la même valeur légale qu'une signature manuscrite.</span>
-                    </label>
-                </div>
-
-                <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-                    <button class="btn btn-outline" onclick="document.getElementById('modal-confirm').classList.add('hidden')">Annuler</button>
-                    <button class="btn btn-primary" id="btn-confirm-sign" onclick="Contracts.confirmSign('${contract.id}')">
-                        Signer le contrat
-                    </button>
-                </div>
-            </div>
-        `;
-
-        // Reuse confirm modal
-        document.getElementById('confirm-title').textContent = 'Signature de contrat';
-        document.getElementById('confirm-message').innerHTML = modalBody;
-        document.getElementById('btn-confirm-action').classList.add('hidden');
-        document.getElementById('modal-confirm').classList.remove('hidden');
-
-        // Init signature pad after DOM update
-        setTimeout(() => initSignaturePad(), 50);
-    }
-
-    function initSignaturePad() {
-        signaturePadCanvas = document.getElementById('signature-canvas');
-        if (!signaturePadCanvas) return;
-
-        signatureCtx = signaturePadCanvas.getContext('2d');
-        signatureCtx.strokeStyle = '#1e293b';
-        signatureCtx.lineWidth = 2.5;
-        signatureCtx.lineCap = 'round';
-        signatureCtx.lineJoin = 'round';
-
-        isDrawing = false;
-
-        const getPos = (e) => {
-            const rect = signaturePadCanvas.getBoundingClientRect();
-            const scaleX = signaturePadCanvas.width / rect.width;
-            const scaleY = signaturePadCanvas.height / rect.height;
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            return {
-                x: (clientX - rect.left) * scaleX,
-                y: (clientY - rect.top) * scaleY,
-            };
-        };
-
-        const startDraw = (e) => {
-            e.preventDefault();
-            isDrawing = true;
-            const pos = getPos(e);
-            lastX = pos.x;
-            lastY = pos.y;
-            signatureCtx.beginPath();
-            signatureCtx.moveTo(lastX, lastY);
-        };
-
-        const draw = (e) => {
-            if (!isDrawing) return;
-            e.preventDefault();
-            const pos = getPos(e);
-            signatureCtx.lineTo(pos.x, pos.y);
-            signatureCtx.stroke();
-            lastX = pos.x;
-            lastY = pos.y;
-        };
-
-        const stopDraw = () => { isDrawing = false; };
-
-        // Mouse events
-        signaturePadCanvas.addEventListener('mousedown', startDraw);
-        signaturePadCanvas.addEventListener('mousemove', draw);
-        signaturePadCanvas.addEventListener('mouseup', stopDraw);
-        signaturePadCanvas.addEventListener('mouseleave', stopDraw);
-
-        // Touch events (mobile/tablet)
-        signaturePadCanvas.addEventListener('touchstart', startDraw, { passive: false });
-        signaturePadCanvas.addEventListener('touchmove', draw, { passive: false });
-        signaturePadCanvas.addEventListener('touchend', stopDraw);
-    }
-
-    function clearSignature() {
-        if (signatureCtx && signaturePadCanvas) {
-            signatureCtx.clearRect(0, 0, signaturePadCanvas.width, signaturePadCanvas.height);
-        }
-    }
-
-    function isSignatureEmpty() {
-        if (!signaturePadCanvas) return true;
-        const data = signatureCtx.getImageData(0, 0, signaturePadCanvas.width, signaturePadCanvas.height).data;
-        // Check if any pixel has been drawn (non-transparent)
-        for (let i = 3; i < data.length; i += 4) {
-            if (data[i] > 0) return false;
-        }
-        return true;
-    }
-
-    async function confirmSign(contractId) {
-        const nameInput = document.getElementById('sign-name-input');
-        const checkbox = document.getElementById('sign-accept-checkbox');
-
-        if (!nameInput || !nameInput.value.trim()) {
-            App.showToast('Entrez le nom du signataire', 'error');
+        if (!att || !att.dataUrl) {
+            App.showToast('Fichier PDF invalide', 'error');
             return;
         }
 
-        if (!checkbox || !checkbox.checked) {
-            App.showToast('Vous devez accepter les termes', 'error');
-            return;
+        const btn = document.getElementById('btn-send-docusign');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Envoi en cours...';
         }
 
-        if (isSignatureEmpty()) {
-            App.showToast('Veuillez dessiner votre signature', 'error');
-            return;
+        try {
+            // Extract base64 from dataUrl
+            const base64 = att.dataUrl.includes(',') ? att.dataUrl.split(',')[1] : att.dataUrl;
+
+            if (Auth.isDemoMode()) {
+                // Demo mode simulation
+                await new Promise(r => setTimeout(r, 1000));
+                const idx = contracts.findIndex(c => c.id === contractId);
+                if (idx !== -1) {
+                    contracts[idx] = {
+                        ...contracts[idx],
+                        signMethod: 'docusign',
+                        docusignEnvelopeId: 'DEMO-' + Date.now(),
+                        docusignStatus: 'sent',
+                        docusignSentAt: new Date().toISOString(),
+                    };
+                    saveLocal();
+                }
+                App.showToast(`(Démo) Contrat envoyé via DocuSign à ${contract.clientEmail}`, 'success');
+                App.addActivity('contract', `Contrat envoyé via DocuSign à ${contract.clientEmail} (démo)`, contract.dealId);
+            } else {
+                await sendViaDocuSign(contractId, base64, att.name);
+            }
+
+            document.getElementById('modal-confirm').classList.add('hidden');
+            document.getElementById('btn-confirm-action').classList.remove('hidden');
+            render('pending');
+        } catch (e) {
+            App.showToast('Erreur DocuSign: ' + e.message, 'error');
         }
 
-        const signatureImage = signaturePadCanvas.toDataURL('image/png');
-        const signerName = nameInput.value.trim();
-
-        await markSigned(contractId, signerName, signatureImage);
-
-        document.getElementById('modal-confirm').classList.add('hidden');
-        document.getElementById('btn-confirm-action').classList.remove('hidden');
-        render('pending');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Envoyer via DocuSign';
+        }
     }
 
-    function viewSignature(contractId) {
+    // ===== DOCUSIGN SEND MODAL (from contract list button) =====
+
+    function openDocuSignSendModal(contractId) {
+        // Reuse the sign modal but switch to DocuSign tab directly
+        openSignModal(contractId);
+        setTimeout(() => {
+            const dsRadio = document.querySelector('input[name="sign-method"][value="docusign"]');
+            if (dsRadio) {
+                dsRadio.checked = true;
+                toggleSignMethod('docusign');
+            }
+        }, 100);
+    }
+
+    async function refreshDocuSignStatus(contractId) {
+        App.showToast('Vérification du statut DocuSign...', 'info');
+        const status = await checkDocuSignStatus(contractId);
+        if (status) {
+            App.showToast(`Statut DocuSign: ${getDocuSignStatusLabel(status)}`, 'info');
+            render('pending');
+        } else {
+            App.showToast('Impossible de vérifier le statut DocuSign', 'warning');
+        }
+    }
+
+    async function downloadDocuSignDocument(contractId) {
         const contract = contracts.find(c => c.id === contractId);
-        if (!contract || !contract.signatureImage) return;
-
-        const w = window.open('', '_blank', 'width=600,height=400');
-        w.document.write(`
-            <html><head><title>Signature - ${contract.clientName}</title>
-            <style>body{font-family:system-ui;padding:24px;text-align:center}</style></head><body>
-            <h2>Signature de ${contract.signerName}</h2>
-            <p>Date: ${new Date(contract.signDate).toLocaleString('fr-CA')}</p>
-            <p>Contrat: ${contract.clientName} - ${contract.description}</p>
-            <img src="${contract.signatureImage}" style="border:1px solid #ccc;max-width:100%;margin-top:16px">
-            </body></html>
-        `);
+        if (!contract || !contract.docusignDocumentUrl) {
+            App.showToast('Document DocuSign non disponible', 'warning');
+            return;
+        }
+        // Open DocuSign document URL in new tab (requires valid token)
+        if (isDocuSignConnected()) {
+            try {
+                const token = getDocuSignAccessToken();
+                const resp = await fetch(contract.docusignDocumentUrl, {
+                    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/pdf' },
+                });
+                if (resp.ok) {
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `Contrat_signe_${contract.clientName.replace(/\s/g, '_')}.pdf`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                    App.showToast('Document DocuSign téléchargé', 'success');
+                    return;
+                }
+            } catch (e) {
+                console.warn('DocuSign document download error:', e);
+            }
+        }
+        App.showToast('Reconnectez DocuSign pour télécharger le document', 'warning');
     }
+
+    // ===== DOCUSIGN TEST CONNECTION =====
+
+    async function testDocuSignConnection() {
+        if (!isDocuSignConfigured()) {
+            return { success: false, message: 'DocuSign non configuré. Remplissez tous les champs.' };
+        }
+        const token = getDocuSignAccessToken();
+        if (!token) {
+            return { success: false, message: 'Non connecté. Cliquez "Connecter DocuSign" d\'abord.' };
+        }
+        try {
+            const result = await docuSignFetch('/users');
+            return { success: true, message: `Connecté. ${result.resultSetSize || 0} utilisateur(s) trouvé(s).` };
+        } catch (e) {
+            return { success: false, message: 'Erreur: ' + e.message };
+        }
+    }
+
+    // Native signature pad removed — all signatures go through DocuSign
 
     function downloadProof(contractId) {
         const contract = contracts.find(c => c.id === contractId);
         if (!contract) return;
 
         const deal = Deals.getById(contract.dealId);
+        const isDocuSign = contract.signMethod === 'docusign';
 
         // Generate a proof of signature as downloadable HTML (printable)
         const html = `
@@ -415,29 +793,37 @@ h1{font-size:22px;border-bottom:2px solid #c0392b;padding-bottom:8px}
 .info strong{color:#64748b;font-size:12px;text-transform:uppercase}
 .sig-box{border:2px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center;margin:24px 0}
 .legal{font-size:11px;color:#94a3b8;margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0}
+.docusign-badge{display:inline-block;padding:4px 12px;background:#4e46e522;color:#4e46e5;border-radius:12px;font-size:12px;font-weight:600;margin-top:8px}
 @media print{body{margin:0;padding:20px}}
 </style></head><body>
-<h1>Portes et Fenêtres LGC - Preuve de signature électronique</h1>
+<h1>Portes et Fen&ecirc;tres LGC - Preuve de signature &eacute;lectronique</h1>
 <div class="info">
 <div><strong>Client</strong><br>${contract.clientName}</div>
 <div><strong>Montant</strong><br>${Deals.formatMoney(contract.amount)}</div>
 <div><strong>Courriel</strong><br>${contract.clientEmail || 'N/A'}</div>
-<div><strong>Téléphone</strong><br>${contract.clientPhone || 'N/A'}</div>
+<div><strong>T&eacute;l&eacute;phone</strong><br>${contract.clientPhone || 'N/A'}</div>
 <div><strong>Description</strong><br>${contract.description}</div>
 ${deal ? `<div><strong>Adresse</strong><br>${deal.clientAddress || 'N/A'}</div>` : ''}
 ${deal && deal.accountNumber ? `<div><strong># Compte Avantage</strong><br>${deal.accountNumber}</div>` : ''}
 ${deal && deal.mecinovQuoteNum ? `<div><strong># Soumission Mec-inov</strong><br>${deal.mecinovQuoteNum}</div>` : ''}
+<div><strong>M&eacute;thode de signature</strong><br>${isDocuSign ? 'DocuSign' : 'Signature locale'}</div>
 </div>
 <div class="sig-box">
-<p><strong>Signé par:</strong> ${contract.signerName}</p>
+<p><strong>Sign&eacute; par:</strong> ${contract.signerName}</p>
 <p><strong>Date:</strong> ${new Date(contract.signDate).toLocaleString('fr-CA')}</p>
-${contract.signatureImage ? `<img src="${contract.signatureImage}" style="max-width:300px;margin:12px 0">` : '<p>(Signature tapée)</p>'}
-<p><strong>Token:</strong> ${contract.signToken}</p>
+${contract.signatureImage ? `<img src="${contract.signatureImage}" style="max-width:300px;margin:12px 0">` : '<p>(Signature &eacute;lectronique)</p>'}
+${isDocuSign ? `
+<div class="docusign-badge">Sign&eacute; via DocuSign</div>
+<p style="font-size:12px;color:#64748b;margin-top:8px">Envelope ID: ${contract.docusignEnvelopeId || 'N/A'}</p>
+${contract.docusignSentAt ? `<p style="font-size:12px;color:#64748b">Envoy&eacute;: ${new Date(contract.docusignSentAt).toLocaleString('fr-CA')}</p>` : ''}
+${contract.docusignSignedAt ? `<p style="font-size:12px;color:#64748b">Sign&eacute;: ${new Date(contract.docusignSignedAt).toLocaleString('fr-CA')}</p>` : ''}
+` : `<p><strong>Token:</strong> ${contract.signToken}</p>`}
 </div>
 <div class="legal">
-Ce document constitue une preuve de signature électronique. Le signataire a confirmé avoir lu et accepté
-les termes du contrat. Contrat créé le ${Deals.formatDate(contract.createdAt)} par ${contract.createdBy}.
-Document généré par CRM LGC - Portes et Fenêtres.
+Ce document constitue une preuve de signature &eacute;lectronique. Le signataire a confirm&eacute; avoir lu et accept&eacute;
+les termes du contrat. Contrat cr&eacute;&eacute; le ${Deals.formatDate(contract.createdAt)} par ${contract.createdBy}.
+${isDocuSign ? 'Signature certifi&eacute;e par DocuSign.' : ''}
+Document g&eacute;n&eacute;r&eacute; par CRM LGC - Portes et Fen&ecirc;tres.
 </div>
 </body></html>`;
 
@@ -680,6 +1066,16 @@ Portes et Fenêtres LGC`;
                             <label>Description</label>
                             <input type="text" id="contract-description" class="input-sm" style="width:100%" placeholder="Ex: Remplacement 12 fenêtres + 2 portes">
                         </div>
+
+                        <div class="form-group" style="margin-top:12px;padding:12px;background:#4e46e510;border:1px solid #4e46e533;border-radius:var(--radius)">
+                            <div style="display:flex;align-items:center;gap:8px;font-weight:600;color:#4e46e5">
+                                <span style="font-size:16px">&#9993;</span>
+                                Le contrat sera envoyé via DocuSign pour signature
+                            </div>
+                            <p style="font-size:12px;color:var(--text-muted);margin-top:4px;margin-left:24px">
+                                Apres la creation, vous pourrez selectionner le PDF et l'envoyer au client.
+                            </p>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -757,7 +1153,6 @@ Portes et Fenêtres LGC`;
         const amount = parseFloat(document.getElementById('contract-amount')?.value) || 0;
         const annexe = document.getElementById('contract-annexe')?.value || '';
         const description = document.getElementById('contract-description')?.value || '';
-
         if (amount) await Deals.update(_selectedContractDealId, { contractAmount: amount });
 
         const contract = await createContract(_selectedContractDealId);
@@ -768,6 +1163,12 @@ Portes et Fenêtres LGC`;
         }
 
         document.getElementById('modal-create-contract')?.classList.add('hidden');
+
+        // Always open DocuSign send modal after creation
+        if (contract) {
+            setTimeout(() => openDocuSignSendModal(contract.id), 300);
+        }
+
         render('pending');
     }
 
@@ -780,9 +1181,6 @@ Portes et Fenêtres LGC`;
         getSignedContracts,
         render,
         openSignModal,
-        clearSignature,
-        confirmSign,
-        viewSignature,
         downloadProof,
         copySignLink,
         sendSignEmail,
@@ -793,5 +1191,20 @@ Portes et Fenêtres LGC`;
         filterContractDeals,
         selectContractDeal,
         confirmCreateContract,
+        // DocuSign API
+        confirmSendDocuSign,
+        openDocuSignSendModal,
+        refreshDocuSignStatus,
+        downloadDocuSignDocument,
+        sendViaDocuSign,
+        checkDocuSignStatus,
+        checkAllPendingDocuSign,
+        startDocuSignPolling,
+        stopDocuSignPolling,
+        testDocuSignConnection,
+        startDocuSignOAuth,
+        handleOAuthCallback,
+        isDocuSignConfigured,
+        isDocuSignConnected,
     };
 })();

@@ -10,6 +10,12 @@ const App = (() => {
 
     // ===== INITIALIZATION =====
     async function init() {
+        // Initialiser le suivi des erreurs en premier
+        if (typeof ErrorTracker !== 'undefined') ErrorTracker.init();
+
+        // Exécuter les migrations de données
+        if (typeof DataVersion !== 'undefined') DataVersion.init();
+
         // Check if this is a contract signing page (standalone, no login required)
         const urlParams = new URLSearchParams(window.location.search);
         const signToken = urlParams.get('sign');
@@ -231,6 +237,9 @@ const App = (() => {
             navigator.serviceWorker.register('./sw.js').catch(() => {});
         }
 
+        // Mettre à jour le badge d'erreurs
+        if (typeof ErrorTracker !== 'undefined') ErrorTracker.updateBadge();
+
         // Load client database
         Clients.loadClients();
 
@@ -416,6 +425,13 @@ const App = (() => {
                 break;
             case 'settings':
                 if (typeof CustomFields !== 'undefined') CustomFields.render();
+                // Ajouter le panneau d'erreurs dans les paramètres
+                if (typeof ErrorTracker !== 'undefined') {
+                    const settingsContent = document.getElementById('view-settings');
+                    if (settingsContent) {
+                        settingsContent.insertAdjacentHTML('beforeend', ErrorTracker.renderPanel());
+                    }
+                }
                 break;
         }
     }
@@ -1074,6 +1090,27 @@ const App = (() => {
             Installations.renderTeamConfig();
         }
 
+        // DocuSign settings
+        const dsEnabled = localStorage.getItem('crm_docusign_enabled') === 'true';
+        const dsIntKey = localStorage.getItem('crm_docusign_integration_key') || '';
+        const dsAccountId = localStorage.getItem('crm_docusign_account_id') || '';
+        const dsBaseUrl = localStorage.getItem('crm_docusign_base_url') || 'https://demo.docusign.net';
+        const dsRedirectUri = localStorage.getItem('crm_docusign_redirect_uri') || '';
+        const elDsEnabled = document.getElementById('setting-docusign-enabled');
+        const elDsIntKey = document.getElementById('setting-docusign-integration-key');
+        const elDsAccountId = document.getElementById('setting-docusign-account-id');
+        const elDsBaseUrl = document.getElementById('setting-docusign-base-url');
+        const elDsRedirectUri = document.getElementById('setting-docusign-redirect-uri');
+        const elDsFields = document.getElementById('docusign-settings-fields');
+        if (elDsEnabled) elDsEnabled.checked = dsEnabled;
+        if (elDsIntKey) elDsIntKey.value = dsIntKey;
+        if (elDsAccountId) elDsAccountId.value = dsAccountId;
+        if (elDsBaseUrl) elDsBaseUrl.value = dsBaseUrl;
+        if (elDsRedirectUri) elDsRedirectUri.value = dsRedirectUri;
+        if (elDsFields) elDsFields.style.display = dsEnabled ? 'block' : 'none';
+        // DocuSign status indicator
+        updateDocuSignStatusIndicator();
+
         // Email templates list in settings
         showEmailTemplatesManager();
 
@@ -1402,6 +1439,34 @@ const App = (() => {
                 msgs.push('❌ SharePoint: ' + (status.sharepoint.message || 'erreur inconnue'));
             }
             details.innerHTML = msgs.map(m => `<p style="margin:4px 0">${m}</p>`).join('');
+        }
+    }
+
+    // ===== DOCUSIGN STATUS INDICATOR =====
+    function updateDocuSignStatusIndicator() {
+        const indicator = document.getElementById('docusign-status-indicator');
+        if (!indicator) return;
+        const enabled = localStorage.getItem('crm_docusign_enabled') === 'true';
+        const hasKey = !!localStorage.getItem('crm_docusign_integration_key');
+        const hasAccount = !!localStorage.getItem('crm_docusign_account_id');
+        const hasToken = !!sessionStorage.getItem('crm_docusign_access_token');
+
+        if (!enabled) {
+            indicator.style.background = '#6b728022';
+            indicator.style.color = '#6b7280';
+            indicator.textContent = 'Désactivé';
+        } else if (!hasKey || !hasAccount) {
+            indicator.style.background = '#f59e0b22';
+            indicator.style.color = '#f59e0b';
+            indicator.textContent = 'Non configuré';
+        } else if (!hasToken) {
+            indicator.style.background = '#ef444422';
+            indicator.style.color = '#ef4444';
+            indicator.textContent = 'Non connecté';
+        } else {
+            indicator.style.background = '#10b98122';
+            indicator.style.color = '#10b981';
+            indicator.textContent = 'Connecté';
         }
     }
 
@@ -2792,6 +2857,42 @@ const App = (() => {
             showToast('Paramètres téléphonie sauvegardés', 'success');
         });
 
+        // DocuSign settings
+        document.getElementById('setting-docusign-enabled')?.addEventListener('change', (e) => {
+            const fields = document.getElementById('docusign-settings-fields');
+            if (fields) fields.style.display = e.target.checked ? 'block' : 'none';
+            localStorage.setItem('crm_docusign_enabled', e.target.checked);
+            updateDocuSignStatusIndicator();
+        });
+        document.getElementById('btn-save-docusign')?.addEventListener('click', () => {
+            localStorage.setItem('crm_docusign_integration_key', document.getElementById('setting-docusign-integration-key')?.value || '');
+            localStorage.setItem('crm_docusign_account_id', document.getElementById('setting-docusign-account-id')?.value || '');
+            localStorage.setItem('crm_docusign_base_url', document.getElementById('setting-docusign-base-url')?.value || 'https://demo.docusign.net');
+            localStorage.setItem('crm_docusign_redirect_uri', document.getElementById('setting-docusign-redirect-uri')?.value || '');
+            showToast('Paramètres DocuSign sauvegardés', 'success');
+            updateDocuSignStatusIndicator();
+        });
+        document.getElementById('btn-connect-docusign')?.addEventListener('click', () => {
+            if (typeof Contracts !== 'undefined' && Contracts.startDocuSignOAuth) {
+                Contracts.startDocuSignOAuth();
+            } else {
+                showToast('Module Contrats non chargé', 'error');
+            }
+        });
+        document.getElementById('btn-test-docusign')?.addEventListener('click', async () => {
+            const resultEl = document.getElementById('docusign-test-result');
+            if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-muted)">Test en cours...</span>';
+            if (typeof Contracts !== 'undefined' && Contracts.testDocuSignConnection) {
+                const result = await Contracts.testDocuSignConnection();
+                if (resultEl) {
+                    resultEl.innerHTML = result.success
+                        ? `<span style="color:var(--success)">✅ ${result.message}</span>`
+                        : `<span style="color:var(--danger)">❌ ${result.message}</span>`;
+                }
+                updateDocuSignStatusIndicator();
+            }
+        });
+
         // AI settings
         document.getElementById('btn-save-ai')?.addEventListener('click', () => {
             localStorage.setItem('crm_ai_provider', document.getElementById('setting-ai-provider')?.value || 'anthropic');
@@ -3207,6 +3308,8 @@ const App = (() => {
         _editTemplate,
         _deleteTemplate,
         _handleExternalSign,
+        getCurrentView: () => currentView,
+        navigateTo: navigate,
         get _editingDealId() { return editingDealId; },
     };
 })();
