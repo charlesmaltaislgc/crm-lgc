@@ -1,5 +1,6 @@
 // ===== CRM LGC - Email Lead Detection Module =====
 // Scans Outlook emails, detects leads, matches existing clients
+// Auto-sync enabled: scans every 2 minutes when active
 
 const EmailScanner = (() => {
     const LEAD_KEYWORDS = [
@@ -40,15 +41,70 @@ const EmailScanner = (() => {
 
     let detectedLeads = [];
     let scanning = false;
+    let lastScanTime = null;
+    let autoSyncInterval = null;
+    let lastUpdateTimerInterval = null;
+    const AUTO_SYNC_DELAY = 120000; // 2 minutes
     const DISMISSED_KEY = 'crm_dismissed_emails';
     const PROCESSED_KEY = 'crm_processed_emails';
 
-    // Persistence: track dismissed and processed emails
+    // ===== AUTO-SYNC =====
+
+    function init() {
+        // Immediately start a scan, then set up auto-sync
+        scanEmails(true);
+        startAutoSync();
+    }
+
+    function startAutoSync() {
+        stopAutoSync();
+        autoSyncInterval = setInterval(() => {
+            // Only auto-scan if not already scanning and document is visible
+            if (!scanning && !document.hidden) {
+                scanEmails(true); // background=true
+            }
+        }, AUTO_SYNC_DELAY);
+
+        // Update the "last updated" timer every 30 seconds
+        lastUpdateTimerInterval = setInterval(() => {
+            updateLastScanDisplay();
+        }, 30000);
+
+        // When navigating to Emails view, refresh immediately
+        document.addEventListener('visibilitychange', _onVisibilityChange);
+    }
+
+    function stopAutoSync() {
+        if (autoSyncInterval) {
+            clearInterval(autoSyncInterval);
+            autoSyncInterval = null;
+        }
+        if (lastUpdateTimerInterval) {
+            clearInterval(lastUpdateTimerInterval);
+            lastUpdateTimerInterval = null;
+        }
+        document.removeEventListener('visibilitychange', _onVisibilityChange);
+    }
+
+    function _onVisibilityChange() {
+        if (!document.hidden && !scanning) {
+            scanEmails(true);
+        }
+    }
+
+    // Called externally when user navigates to Emails tab
+    function onNavigateToEmails() {
+        if (!scanning) {
+            scanEmails(true);
+        }
+    }
+
+    // ===== PERSISTENCE =====
+
     function getDismissed() {
         try { return JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]'); } catch { return []; }
     }
     function saveDismissed(list) {
-        // Keep last 500 dismissed email IDs
         localStorage.setItem(DISMISSED_KEY, JSON.stringify(list.slice(-500)));
     }
     function getProcessed() {
@@ -64,7 +120,6 @@ const EmailScanner = (() => {
     }
 
     // ===== CLIENT MATCHING =====
-    // Check if the email sender matches an existing client in the CRM
     function findExistingClient(fromEmail, fromName, phone) {
         const allDeals = Deals.getAll();
         const matches = [];
@@ -123,16 +178,22 @@ const EmailScanner = (() => {
             }
         }
 
-        // Sort by score descending, return best matches
         return matches.sort((a, b) => b.score - a.score);
     }
 
-    async function scanEmails() {
-        scanning = true;
-        detectedLeads = [];
-        updateUI('scanning');
+    // ===== SCANNING =====
 
-        // Load dismissed + processed lists to skip already-handled emails
+    async function scanEmails(background = false) {
+        if (scanning) return;
+        scanning = true;
+
+        // For background refreshes, show subtle spinner instead of full scanning UI
+        if (background && detectedLeads.length > 0) {
+            showBackgroundSpinner(true);
+        } else {
+            updateUI('scanning');
+        }
+
         const dismissed = getDismissed();
         const processed = getProcessed();
         const handledIds = new Set([...dismissed, ...processed.map(p => p.id)]);
@@ -144,20 +205,22 @@ const EmailScanner = (() => {
             } else {
                 const token = await Auth.getToken();
                 if (!token || token === 'demo-token') {
-                    App.showToast('Connexion M365 requise pour scanner les courriels.', 'error');
+                    if (!background) App.showToast('Connexion M365 requise pour scanner les courriels.', 'error');
                     scanning = false;
-                    updateUI('no-auth');
+                    showBackgroundSpinner(false);
+                    if (!background) updateUI('no-auth');
                     return;
                 }
 
-                // Check service status - mailbox might not be available
+                // Check service status
                 const status = Graph.getServiceStatus();
                 if (status.outlook?.status === 'no-mailbox') {
                     const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || '';
                     if (!sharedMailbox) {
-                        App.showToast('Votre compte n\'a pas de boîte Outlook. Configurez une boîte partagée dans Paramètres → M365.', 'warning');
+                        if (!background) App.showToast('Votre compte n\'a pas de boîte Outlook. Configurez une boîte partagée dans Paramètres.', 'warning');
                         scanning = false;
-                        updateUI('no-mailbox');
+                        showBackgroundSpinner(false);
+                        if (!background) updateUI('no-mailbox');
                         return;
                     }
                 }
@@ -166,16 +229,13 @@ const EmailScanner = (() => {
                 weekAgo.setDate(weekAgo.getDate() - 7);
                 const dateFilter = `receivedDateTime ge ${weekAgo.toISOString()}`;
 
-                // Scan personal mailbox
                 emails = await Graph.getEmails(50, dateFilter);
 
-                // Also scan soumission@pflgc.com shared mailbox for all users
                 const sharedMailbox = localStorage.getItem('crm_sharedMailbox') || 'soumission@pflgc.com';
                 if (sharedMailbox) {
                     try {
                         const sharedEmails = await Graph.getSharedMailboxEmails(sharedMailbox, 30, dateFilter);
                         if (sharedEmails?.length > 0) {
-                            // Mark shared emails so we know the source
                             sharedEmails.forEach(e => { e._fromShared = sharedMailbox; });
                             emails = [...(emails || []), ...sharedEmails];
                         }
@@ -185,28 +245,24 @@ const EmailScanner = (() => {
                 }
 
                 if (!emails || emails.length === 0) {
-                    App.showToast('Aucun courriel trouvé dans les 7 derniers jours', 'info');
+                    if (!background) App.showToast('Aucun courriel trouvé dans les 7 derniers jours', 'info');
                 }
             }
 
-            for (const email of emails) {
+            // Reset leads for fresh scan
+            detectedLeads = [];
+
+            for (const email of (emails || [])) {
                 const emailId = email.id || 'E' + Math.random().toString(36).substr(2, 9);
                 const fromEmail = (email.from?.emailAddress?.address || email.fromEmail || '').toLowerCase();
                 const fromName = email.from?.emailAddress?.name || email.fromName || 'Inconnu';
 
-                // === FILTER 0: Skip already dismissed/processed emails ===
                 if (handledIds.has(emailId)) continue;
-
-                // === FILTER 1: Skip internal/system senders ===
                 if (isExcludedSender(fromEmail, fromName)) continue;
 
-                // === FILTER 2: Analyze content ===
                 const score = analyzeEmail(email);
-
-                // === FILTER 3: Require minimum confidence of 2 (at least 2 keywords or strong signal) ===
                 if (score.confidence < 2) continue;
 
-                // Check if client already exists
                 const existingMatches = findExistingClient(fromEmail, fromName, score.phone);
                 const bestMatch = existingMatches.length > 0 ? existingMatches[0] : null;
 
@@ -220,7 +276,6 @@ const EmailScanner = (() => {
                     confidence: score.confidence,
                     matchedKeywords: score.keywords,
                     phone: score.phone,
-                    // Client matching
                     existingDeal: bestMatch ? bestMatch.deal : null,
                     matchReason: bestMatch ? bestMatch.reason : null,
                     matchScore: bestMatch ? bestMatch.score : 0,
@@ -228,9 +283,8 @@ const EmailScanner = (() => {
                 });
             }
 
-            // Sort: existing clients first (they need attention), then by confidence
+            // Sort: existing clients first, then by confidence
             detectedLeads.sort((a, b) => {
-                // Existing clients with high match first
                 if (a.existingDeal && !b.existingDeal) return -1;
                 if (!a.existingDeal && b.existingDeal) return 1;
                 return b.confidence - a.confidence;
@@ -238,31 +292,32 @@ const EmailScanner = (() => {
 
         } catch (e) {
             console.error('Email scan failed:', e);
-            App.showToast('Erreur lors du scan des courriels', 'error');
+            if (!background) App.showToast('Erreur lors du scan des courriels', 'error');
         }
 
         scanning = false;
+        lastScanTime = new Date();
+        showBackgroundSpinner(false);
         updateUI('results');
         updateBadge();
     }
+
+    // ===== HELPERS =====
 
     function isExcludedSender(email, name) {
         if (!email) return true;
         const emailLower = email.toLowerCase();
         const nameLower = (name || '').toLowerCase();
 
-        // Check excluded sender patterns
         for (const pattern of EXCLUDE_SENDERS) {
             if (emailLower.includes(pattern) || nameLower.includes(pattern)) return true;
         }
 
-        // Check internal company domains
         const domain = emailLower.split('@')[1] || '';
         for (const internalDomain of INTERNAL_DOMAINS) {
             if (domain === internalDomain || domain.endsWith('.' + internalDomain)) return true;
         }
 
-        // Skip common free email auto-senders (e.g. Google Calendar, PayPal, etc.)
         const autoSenderDomains = [
             'facebookmail.com', 'linkedin.com', 'twitter.com', 'x.com',
             'paypal.com', 'shopify.com', 'wix.com', 'squarespace.com',
@@ -309,6 +364,45 @@ const EmailScanner = (() => {
             keywords: matched,
             phone: phoneMatch ? phoneMatch[0] : null,
         };
+    }
+
+    // ===== RELATIVE DATE FORMATTING =====
+
+    function formatRelativeDate(dateStr) {
+        const now = new Date();
+        const date = new Date(dateStr);
+        const diffMs = now - date;
+        const diffMin = Math.floor(diffMs / 60000);
+        const diffH = Math.floor(diffMs / 3600000);
+        const diffD = Math.floor(diffMs / 86400000);
+
+        if (diffMin < 1) return 'à l\'instant';
+        if (diffMin < 60) return `il y a ${diffMin} min`;
+        if (diffH < 24) return `il y a ${diffH}h`;
+        if (diffD === 1) return 'hier';
+        if (diffD < 7) return `il y a ${diffD} jours`;
+        return date.toLocaleDateString('fr-CA');
+    }
+
+    function formatLastScan() {
+        if (!lastScanTime) return '';
+        return formatRelativeDate(lastScanTime.toISOString());
+    }
+
+    // ===== UI =====
+
+    function showBackgroundSpinner(show) {
+        const spinner = document.getElementById('email-scan-spinner');
+        if (spinner) {
+            spinner.style.display = show ? 'inline-flex' : 'none';
+        }
+    }
+
+    function updateLastScanDisplay() {
+        const el = document.getElementById('email-last-scan');
+        if (el && lastScanTime) {
+            el.textContent = `Dernière mise à jour: ${formatLastScan()}`;
+        }
     }
 
     function updateUI(state) {
@@ -361,8 +455,23 @@ const EmailScanner = (() => {
             return;
         }
 
+        // ===== HEADER BAR: last scan + spinner + refresh button =====
+        let headerHtml = `
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:8px 12px;background:var(--bg);border-radius:var(--radius);font-size:12px;color:var(--text-muted)">
+                <span id="email-last-scan">${lastScanTime ? `Dernière mise à jour: ${formatLastScan()}` : ''}</span>
+                <span id="email-scan-spinner" style="display:none;align-items:center;gap:4px;color:var(--primary)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31 31" stroke-linecap="round"/></svg>
+                    Actualisation...
+                </span>
+                <button class="btn btn-sm btn-outline" onclick="EmailScanner.scanEmails()" style="margin-left:auto;font-size:11px" title="Actualiser maintenant">
+                    🔄 Actualiser
+                </button>
+            </div>
+            <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+        `;
+
         if (detectedLeads.length === 0) {
-            container.innerHTML = `
+            container.innerHTML = headerHtml + `
                 <div class="email-placeholder">
                     <p style="font-size:24px">✅</p>
                     <p><strong>Aucun lead potentiel détecté</strong></p>
@@ -381,7 +490,7 @@ const EmailScanner = (() => {
         const processedCount = getProcessed().length;
         const dismissedCount = getDismissed().length;
 
-        let html = `
+        let html = headerHtml + `
             <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--bg);border-radius:var(--radius);font-size:13px;flex-wrap:wrap;align-items:center">
                 <span><strong>${detectedLeads.length}</strong> courriels à traiter</span>
                 ${existingCount > 0 ? `<span style="color:var(--info)">📋 <strong>${existingCount}</strong> clients existants</span>` : ''}
@@ -391,179 +500,100 @@ const EmailScanner = (() => {
             </div>
         `;
 
-        html += detectedLeads.map(lead => {
-            const confClass = lead.confidence >= 3 ? 'high' : lead.confidence >= 2 ? 'medium' : 'low';
-            const confText = lead.confidence >= 3 ? 'Élevée' : lead.confidence >= 2 ? 'Moyenne' : 'Faible';
-            const isExisting = lead.existingDeal !== null;
-
-            return `
-                <div class="email-lead-card" style="${isExisting ? 'border-left:4px solid var(--info)' : ''}">
-                    <span class="email-confidence ${confClass}">${confText}</span>
-                    <div class="email-content">
-                        ${isExisting ? `
-                            <div style="background:var(--info-light);color:var(--info);padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-bottom:6px;display:inline-block">
-                                📋 CLIENT EXISTANT: ${lead.existingDeal.clientName} (${lead.matchReason})
-                                — Étape: ${Deals.getStageName(lead.existingDeal.stage)}
-                            </div>
-                        ` : ''}
-                        <div class="email-from">${lead.from} &lt;${lead.fromEmail}&gt;</div>
-                        <div class="email-subject">${lead.subject}</div>
-                        <div class="email-preview">${lead.preview}...</div>
-                        <div class="email-date">${Deals.formatDate(lead.date)}
-                            ${lead.phone ? ` | Tél: ${lead.phone}` : ''}
-                            | Mots-clés: ${lead.matchedKeywords.slice(0, 5).join(', ')}
-                        </div>
-                    </div>
-                    <div class="email-actions" style="display:flex;flex-direction:column;gap:6px">
-                        ${isExisting ? `
-                            <button class="btn btn-sm btn-primary" onclick="EmailScanner.openExistingDeal('${lead.id}')">
-                                Ouvrir le deal
-                            </button>
-                            <button class="btn btn-sm btn-outline" onclick="EmailScanner.addNoteFromEmail('${lead.id}')">
-                                Ajouter note
-                            </button>
-                            ${lead.allMatches.length > 1 ? `
-                                <button class="btn btn-sm btn-outline" onclick="EmailScanner.showAllMatches('${lead.id}')">
-                                    ${lead.allMatches.length} deals liés
-                                </button>
-                            ` : ''}
-                            <button class="btn btn-sm btn-outline" onclick="EmailScanner.linkToExistingDeal('${lead.id}')">
-                                🔗 Autre deal
-                            </button>
-                        ` : `
-                            <button class="btn btn-sm btn-primary" onclick="EmailScanner.createDealFromEmail('${lead.id}')">
-                                Créer deal
-                            </button>
-                            <button class="btn btn-sm btn-outline" onclick="EmailScanner.linkToExistingDeal('${lead.id}')">
-                                🔗 Rattacher à un deal
-                            </button>
-                        `}
-                        <button class="btn btn-sm btn-outline" onclick="EmailScanner.dismiss('${lead.id}')">
-                            Ignorer
-                        </button>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        html += detectedLeads.map(lead => renderLeadCard(lead)).join('');
 
         container.innerHTML = html;
     }
+
+    function renderLeadCard(lead) {
+        const confClass = lead.confidence >= 3 ? 'high' : lead.confidence >= 2 ? 'medium' : 'low';
+        const confLabel = lead.confidence >= 3 ? 'Élevée' : lead.confidence >= 2 ? 'Moyenne' : 'Faible';
+        const isExisting = lead.existingDeal !== null;
+        const relDate = formatRelativeDate(lead.date);
+
+        // Escape single quotes in IDs for onclick handlers
+        const safeId = lead.id.replace(/'/g, "\\'");
+
+        return `
+            <div class="email-lead-card" style="${isExisting ? 'border-left:4px solid var(--info)' : 'border-left:4px solid var(--success)'}">
+                <div style="flex:1;min-width:0">
+                    ${isExisting ? `
+                        <div style="background:var(--info-light, #e8f4fd);color:var(--info);padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-bottom:8px;display:inline-block">
+                            📋 CLIENT EXISTANT: ${_esc(lead.existingDeal.clientName)} (${lead.matchReason})
+                            — Étape: ${Deals.getStageName(lead.existingDeal.stage)}
+                        </div>
+                    ` : `
+                        <div style="background:var(--success-light, #e8fde8);color:var(--success);padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-bottom:8px;display:inline-block">
+                            🆕 NOUVEAU LEAD
+                        </div>
+                    `}
+                    <div style="font-size:14px;margin-bottom:4px">
+                        <strong>${_esc(lead.from)}</strong>
+                        <span style="color:var(--text-muted);font-size:12px;margin-left:4px">&lt;${_esc(lead.fromEmail)}&gt;</span>
+                    </div>
+                    <div style="font-weight:700;font-size:13px;margin-bottom:4px">${_esc(lead.subject)}</div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;line-height:1.4;max-width:600px;overflow:hidden;text-overflow:ellipsis">${_esc(lead.preview.substring(0, 150))}${lead.preview.length > 150 ? '...' : ''}</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:11px;color:var(--text-muted)">
+                        <span>🕐 ${relDate}</span>
+                        ${lead.phone ? `<span style="color:var(--primary);font-weight:600">📞 ${lead.phone}</span>` : ''}
+                        <span>🔑 ${lead.matchedKeywords.slice(0, 5).map(k => `<em>${k}</em>`).join(', ')}</span>
+                        <span class="email-confidence ${confClass}" style="font-size:10px;padding:2px 6px">${confLabel}</span>
+                    </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;min-width:180px">
+                    ${isExisting ? `
+                        <button class="btn btn-sm btn-primary" onclick="EmailScanner.openExistingDeal('${safeId}')" style="white-space:nowrap">
+                            📋 Ouvrir deal de ${_esc(_truncate(lead.existingDeal.clientName, 15))}
+                        </button>
+                        <button class="btn btn-sm btn-outline" onclick="EmailScanner.addNoteFromEmail('${safeId}')" style="white-space:nowrap">
+                            📝 Ajouter note au deal
+                        </button>
+                        <button class="btn btn-sm btn-outline" onclick="EmailScanner.createDealFromEmail('${safeId}')" style="white-space:nowrap">
+                            🆕 Nouveau deal quand même
+                        </button>
+                        ${lead.allMatches.length > 1 ? `
+                            <button class="btn btn-sm btn-outline" onclick="EmailScanner.showAllMatches('${safeId}')" style="white-space:nowrap">
+                                📋 ${lead.allMatches.length} deals liés
+                            </button>
+                        ` : ''}
+                        <button class="btn btn-sm btn-outline" style="color:var(--text-muted);white-space:nowrap" onclick="EmailScanner.dismiss('${safeId}')">
+                            🚫 Ignorer
+                        </button>
+                    ` : `
+                        <button class="btn btn-sm btn-primary" onclick="EmailScanner.createDealFromEmail('${safeId}')" style="background:var(--success);border-color:var(--success);white-space:nowrap">
+                            🆕 Nouveau deal
+                        </button>
+                        <button class="btn btn-sm btn-outline" onclick="EmailScanner.linkToExistingDeal('${safeId}')" style="white-space:nowrap">
+                            🔗 Rattacher à un deal
+                        </button>
+                        <button class="btn btn-sm btn-outline" style="color:var(--text-muted);white-space:nowrap" onclick="EmailScanner.dismiss('${safeId}')">
+                            🚫 Ignorer
+                        </button>
+                    `}
+                </div>
+            </div>
+        `;
+    }
+
+    // Escape HTML to prevent XSS
+    function _esc(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function _truncate(str, max) {
+        if (!str) return '';
+        return str.length > max ? str.substring(0, max) + '...' : str;
+    }
+
+    // ===== ACTIONS =====
 
     function openExistingDeal(emailId) {
         const lead = detectedLeads.find(l => l.id === emailId);
         if (!lead || !lead.existingDeal) return;
         App.openDeal(lead.existingDeal.id);
-    }
-
-    function linkToExistingDeal(emailId) {
-        const lead = detectedLeads.find(l => l.id === emailId);
-        if (!lead) return;
-
-        const allDeals = Deals.getAll().filter(d => d.status === 'active' || d.status === 'won');
-        if (allDeals.length === 0) {
-            App.showToast('Aucun deal actif pour rattacher ce courriel', 'warning');
-            return;
-        }
-
-        // Create a simple picker modal
-        let modal = document.getElementById('modal-link-email');
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'modal-link-email';
-            modal.className = 'modal';
-            document.body.appendChild(modal);
-        }
-
-        // Store emailId on the modal so _filterLinkDeals can access it
-        modal.dataset.emailId = emailId;
-        modal.innerHTML = `
-            <div class="modal-overlay" onclick="document.getElementById('modal-link-email').classList.add('hidden')"></div>
-            <div class="modal-content" style="z-index:2;max-width:500px">
-                <div class="modal-header">
-                    <h3>🔗 Rattacher à un deal existant</h3>
-                    <button class="modal-close" onclick="document.getElementById('modal-link-email').classList.add('hidden')">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
-                        Courriel de <strong>${lead.from}</strong>: "${lead.subject}"
-                    </p>
-                    <input type="text" id="link-deal-search" class="input-sm" style="width:100%;margin-bottom:12px" placeholder="🔍 Rechercher un client..." oninput="EmailScanner._filterLinkDeals(this.value)">
-                    <div id="link-deal-list" style="max-height:300px;overflow-y:auto">
-                        ${allDeals.slice(0, 20).map(d => `
-                            <div class="dir-card" style="margin-bottom:4px;cursor:pointer" onclick="EmailScanner._doLink('${emailId}','${d.id}')">
-                                <div style="flex:1">
-                                    <div style="font-weight:600">${d.clientName}</div>
-                                    <div style="font-size:12px;color:var(--text-muted)">${Deals.getStageName(d.stage)} — ${Deals.formatMoney(d.quoteAmount || d.contractAmount || 0)}</div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-        modal.classList.remove('hidden');
-    }
-
-    function _filterLinkDeals(search) {
-        const allDeals = Deals.getAll().filter(d => d.status === 'active' || d.status === 'won');
-        const filtered = search
-            ? allDeals.filter(d => d.clientName.toLowerCase().includes(search.toLowerCase()))
-            : allDeals.slice(0, 20);
-        const list = document.getElementById('link-deal-list');
-        if (!list) return;
-        // Get emailId from modal's data attribute (stored in linkToExistingDeal)
-        const modal = document.getElementById('modal-link-email');
-        const emailId = modal?.dataset.emailId || '';
-        list.innerHTML = filtered.map(d => `
-            <div class="dir-card" style="margin-bottom:4px;cursor:pointer" onclick="EmailScanner._doLink('${emailId}','${d.id}')">
-                <div style="flex:1">
-                    <div style="font-weight:600">${d.clientName}</div>
-                    <div style="font-size:12px;color:var(--text-muted)">${Deals.getStageName(d.stage)} — ${Deals.formatMoney(d.quoteAmount || d.contractAmount || 0)}</div>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    async function _doLink(emailId, dealId) {
-        // Find the lead from the current emailId context
-        let lead = detectedLeads.find(l => l.id === emailId);
-        if (!lead) {
-            // Try to get from the modal context
-            const modal = document.getElementById('modal-link-email');
-            const allLeads = detectedLeads;
-            lead = allLeads[allLeads.length - 1]; // fallback
-        }
-        if (!lead) return;
-
-        const noteText = `📧 Courriel rattaché de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`;
-        await Deals.addNote(dealId, noteText);
-        const deal = Deals.getById(dealId);
-        markProcessed(lead.id, 'linked_to_deal', deal?.clientName || dealId);
-        App.showToast(`Courriel rattaché au deal de ${deal?.clientName || dealId}`, 'success');
-        document.getElementById('modal-link-email')?.classList.add('hidden');
-        dismiss(lead.id);
-    }
-
-    async function addNoteFromEmail(emailId) {
-        const lead = detectedLeads.find(l => l.id === emailId);
-        if (!lead || !lead.existingDeal) return;
-
-        const noteText = `📧 Courriel reçu de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`;
-        await Deals.addNote(lead.existingDeal.id, noteText);
-        markProcessed(emailId, 'note_added', lead.existingDeal.clientName);
-        App.showToast(`Note ajoutée au deal de ${lead.existingDeal.clientName}`, 'success');
-        dismiss(emailId);
-    }
-
-    function showAllMatches(emailId) {
-        const lead = detectedLeads.find(l => l.id === emailId);
-        if (!lead) return;
-
-        const matchList = lead.allMatches.map(m =>
-            `- ${m.deal.clientName} (${m.reason}, étape: ${Deals.getStageName(m.deal.stage)})`
-        ).join('\n');
-
-        alert(`Deals possiblement liés:\n\n${matchList}\n\nCliquez "Ouvrir le deal" pour voir le meilleur match.`);
     }
 
     async function createDealFromEmail(emailId) {
@@ -577,25 +607,174 @@ const EmailScanner = (() => {
             clientType: 'regulier',
             leadSource: 'courriel',
             leadDate: new Date(lead.date).toISOString().split('T')[0],
-            description: `Lead détecté par courriel: "${lead.subject}"`,
+            description: `Lead courriel: "${lead.subject}"`,
         };
 
-        App.openNewDeal(dealData);
-        markProcessed(emailId, 'deal_created', lead.from);
-        dismiss(emailId);
-        App.showToast('Deal pré-rempli depuis le courriel', 'info');
+        try {
+            // Actually create the deal
+            const deal = await Deals.create(dealData);
+
+            if (deal) {
+                // Add the email as a note
+                await Deals.addNote(deal.id, `📧 Courriel initial de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`);
+                markProcessed(lead.id, 'deal_created', lead.from);
+                App.showToast(`Deal créé pour ${lead.from}`, 'success');
+                // Remove from list
+                detectedLeads = detectedLeads.filter(l => l.id !== emailId);
+                updateUI('results');
+                updateBadge();
+                // Open the deal
+                App.openDeal(deal.id);
+            } else {
+                // Fallback: if Deals.create doesn't return the deal, open form pre-filled
+                App.openNewDeal(dealData);
+                markProcessed(emailId, 'deal_created', lead.from);
+                _dismissSilent(emailId);
+                App.showToast('Deal pré-rempli depuis le courriel', 'info');
+            }
+        } catch (e) {
+            console.error('Error creating deal from email:', e);
+            // Fallback to opening the new deal form pre-filled
+            App.openNewDeal(dealData);
+            markProcessed(emailId, 'deal_created', lead.from);
+            _dismissSilent(emailId);
+            App.showToast('Deal pré-rempli depuis le courriel (création auto échouée)', 'warning');
+        }
+    }
+
+    async function addNoteFromEmail(emailId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead || !lead.existingDeal) return;
+
+        const noteText = `📧 Courriel reçu de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`;
+        await Deals.addNote(lead.existingDeal.id, noteText);
+        markProcessed(emailId, 'note_added', lead.existingDeal.clientName);
+        App.showToast(`Note ajoutée au deal de ${lead.existingDeal.clientName}`, 'success');
+        _dismissSilent(emailId);
+        detectedLeads = detectedLeads.filter(l => l.id !== emailId);
+        updateUI('results');
+        updateBadge();
+    }
+
+    function linkToExistingDeal(emailId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead) return;
+
+        const allDeals = Deals.getAll().filter(d => d.status === 'active' || d.status === 'won');
+        if (allDeals.length === 0) {
+            App.showToast('Aucun deal actif pour rattacher ce courriel', 'warning');
+            return;
+        }
+
+        let modal = document.getElementById('modal-link-email');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'modal-link-email';
+            modal.className = 'modal';
+            document.body.appendChild(modal);
+        }
+
+        modal.dataset.emailId = emailId;
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="document.getElementById('modal-link-email').classList.add('hidden')"></div>
+            <div class="modal-content" style="z-index:2;max-width:500px">
+                <div class="modal-header">
+                    <h3>🔗 Rattacher à un deal existant</h3>
+                    <button class="modal-close" onclick="document.getElementById('modal-link-email').classList.add('hidden')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+                        Courriel de <strong>${_esc(lead.from)}</strong>: "${_esc(lead.subject)}"
+                    </p>
+                    <input type="text" id="link-deal-search" class="input-sm" style="width:100%;margin-bottom:12px;padding:8px;border:1px solid var(--border);border-radius:var(--radius)" placeholder="🔍 Rechercher un client..." oninput="EmailScanner._filterLinkDeals(this.value)">
+                    <div id="link-deal-list" style="max-height:300px;overflow-y:auto">
+                        ${_renderDealPickerList(allDeals.slice(0, 20), emailId)}
+                    </div>
+                </div>
+            </div>
+        `;
+        modal.classList.remove('hidden');
+
+        // Auto-focus search field
+        setTimeout(() => {
+            const input = document.getElementById('link-deal-search');
+            if (input) input.focus();
+        }, 100);
+    }
+
+    function _renderDealPickerList(deals, emailId) {
+        if (deals.length === 0) {
+            return '<p style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px">Aucun deal trouvé</p>';
+        }
+        return deals.map(d => `
+            <div class="dir-card" style="margin-bottom:4px;cursor:pointer;padding:10px;border:1px solid var(--border);border-radius:var(--radius);transition:background 0.15s"
+                 onmouseenter="this.style.background='var(--bg-hover, #f5f5f5)'" onmouseleave="this.style.background=''"
+                 onclick="EmailScanner._doLink('${emailId}','${d.id}')">
+                <div style="flex:1">
+                    <div style="font-weight:600;font-size:13px">${_esc(d.clientName)}</div>
+                    <div style="font-size:12px;color:var(--text-muted)">${Deals.getStageName(d.stage)} — ${Deals.formatMoney(d.quoteAmount || d.contractAmount || 0)}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function _filterLinkDeals(search) {
+        const allDeals = Deals.getAll().filter(d => d.status === 'active' || d.status === 'won');
+        const filtered = search
+            ? allDeals.filter(d => d.clientName.toLowerCase().includes(search.toLowerCase()))
+            : allDeals.slice(0, 20);
+        const list = document.getElementById('link-deal-list');
+        if (!list) return;
+        const modal = document.getElementById('modal-link-email');
+        const emailId = modal?.dataset.emailId || '';
+        list.innerHTML = _renderDealPickerList(filtered, emailId);
+    }
+
+    async function _doLink(emailId, dealId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead) return;
+
+        const noteText = `📧 Courriel rattaché de ${lead.from} (${lead.fromEmail})\nSujet: ${lead.subject}\n---\n${lead.preview}`;
+        await Deals.addNote(dealId, noteText);
+        const deal = Deals.getById(dealId);
+        markProcessed(lead.id, 'linked_to_deal', deal?.clientName || dealId);
+        App.showToast(`Courriel rattaché au deal de ${deal?.clientName || dealId}`, 'success');
+
+        // Close modal
+        document.getElementById('modal-link-email')?.classList.add('hidden');
+
+        // Remove from detected leads
+        detectedLeads = detectedLeads.filter(l => l.id !== emailId);
+        _dismissSilent(emailId);
+        updateUI('results');
+        updateBadge();
+    }
+
+    function showAllMatches(emailId) {
+        const lead = detectedLeads.find(l => l.id === emailId);
+        if (!lead) return;
+
+        const matchList = lead.allMatches.map(m =>
+            `- ${m.deal.clientName} (${m.reason}, étape: ${Deals.getStageName(m.deal.stage)})`
+        ).join('\n');
+
+        alert(`Deals possiblement liés:\n\n${matchList}\n\nCliquez "Ouvrir deal" pour voir le meilleur match.`);
     }
 
     function dismiss(emailId) {
-        // Persist dismissal so this email won't reappear on next scan
+        _dismissSilent(emailId);
+        detectedLeads = detectedLeads.filter(l => l.id !== emailId);
+        updateUI('results');
+        updateBadge();
+    }
+
+    // Persist dismissal without updating UI (used internally before another UI update)
+    function _dismissSilent(emailId) {
         const dismissed = getDismissed();
         if (!dismissed.includes(emailId)) {
             dismissed.push(emailId);
             saveDismissed(dismissed);
         }
-        detectedLeads = detectedLeads.filter(l => l.id !== emailId);
-        updateUI('results');
-        updateBadge();
     }
 
     function updateBadge() {
@@ -610,10 +789,15 @@ const EmailScanner = (() => {
         }
     }
 
+    function getNewLeadCount() {
+        return detectedLeads.length;
+    }
+
+    // ===== DEMO DATA =====
+
     function generateDemoEmails() {
         return [
             {
-                // This one matches existing demo deal "Gagnon, Sophie" by name
                 id: 'E001', fromName: 'Sophie Gagnon', fromEmail: 'sophie.gagnon@gmail.com',
                 subject: 'Re: Soumission fenêtres - question sur le vitrage',
                 preview: 'Bonjour, je fais suite à notre discussion. J\'aimerais savoir si le vitrage triple est disponible pour les fenêtres de la soumission que vous m\'avez envoyée. Aussi, est-ce que le prix change beaucoup? Merci!',
@@ -626,7 +810,6 @@ const EmailScanner = (() => {
                 date: new Date(Date.now() - 86400000).toISOString(),
             },
             {
-                // This matches "Construction ABC" by company name
                 id: 'E003', fromName: 'Jean Dupont', fromEmail: 'jean@constructionabc.com',
                 subject: 'Projet 12 unités - mise à jour des specs',
                 preview: 'Bonjour, suite à notre rencontre, nous avons modifié les plans. Les dimensions des fenêtres du 3e étage ont changé. Pouvez-vous réviser la soumission? Merci',
@@ -639,7 +822,6 @@ const EmailScanner = (() => {
                 date: new Date(Date.now() - 172800000).toISOString(),
             },
             {
-                // Matches "Tremblay, Martin" by last name
                 id: 'E005', fromName: 'Martin Tremblay', fromEmail: 'martin.tremblay@videotron.ca',
                 subject: 'Re: Installation - question date',
                 preview: 'Bonjour, je voulais savoir quand est prévue l\'installation de mes fenêtres? J\'ai hâte! Pouvez-vous me confirmer la date? Mon numéro est (418) 555-7890',
@@ -668,8 +850,16 @@ const EmailScanner = (() => {
         }
     }
 
+    // ===== PUBLIC API =====
     return {
+        // Auto-sync
+        init,
+        startAutoSync,
+        stopAutoSync,
+        onNavigateToEmails,
+        // Scanning
         scanEmails,
+        // Actions
         createDealFromEmail,
         openExistingDeal,
         addNoteFromEmail,
@@ -679,6 +869,8 @@ const EmailScanner = (() => {
         _doLink,
         dismiss,
         resetHistory,
+        // Data access
         getDetectedLeads: () => detectedLeads,
+        getNewLeadCount,
     };
 })();

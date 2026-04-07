@@ -281,6 +281,12 @@ const App = (() => {
         // Init chatbot
         if (typeof Chatbot !== 'undefined') Chatbot.init();
 
+        // Init email auto-sync (scans immediately + every 2 min)
+        if (typeof EmailScanner !== 'undefined' && EmailScanner.init) EmailScanner.init();
+
+        // Init Shopify auto-sync
+        if (typeof Shopify !== 'undefined' && Shopify.startAutoSync) Shopify.startAutoSync();
+
         // Init new modules
         if (typeof Activities !== 'undefined' && Activities.getOverdue) updateActivityBadge();
         if (typeof Automations !== 'undefined' && Automations.startPeriodicCheck) Automations.startPeriodicCheck();
@@ -1075,7 +1081,14 @@ const App = (() => {
         const elmod = document.getElementById('setting-ai-model');
         if (elprov) elprov.value = aiProvider;
         if (elkey) elkey.value = aiApiKey;
+        // Show/hide model groups based on provider
+        const anthropicGroup = document.getElementById('ai-models-anthropic');
+        const openaiGroup = document.getElementById('ai-models-openai');
+        if (anthropicGroup) anthropicGroup.style.display = aiProvider === 'anthropic' ? '' : 'none';
+        if (openaiGroup) openaiGroup.style.display = aiProvider === 'openai' ? '' : 'none';
         if (elmod) elmod.value = aiModel;
+        // Update status badge
+        updateAIStatusBadge();
 
         // Theme
         const theme = localStorage.getItem('crm_theme') || 'light';
@@ -1252,6 +1265,28 @@ const App = (() => {
     }
 
     // ===== AI CONNECTION TEST =====
+    function updateAIStatusBadge(status) {
+        const badge = document.getElementById('ai-status-badge');
+        if (!badge) return;
+        if (status === 'connected') {
+            badge.style.background = '#dcfce7';
+            badge.style.color = '#166534';
+            badge.textContent = '🟢 Connecté';
+        } else if (status === 'error') {
+            badge.style.background = '#fef2f2';
+            badge.style.color = '#dc2626';
+            badge.textContent = '🔴 Erreur';
+        } else if (status === 'testing') {
+            badge.style.background = '#fef9c3';
+            badge.style.color = '#854d0e';
+            badge.textContent = '🟡 Test...';
+        } else {
+            badge.style.background = '#f1f5f9';
+            badge.style.color = '#64748b';
+            badge.textContent = localStorage.getItem('crm_ai_apikey') ? '⚪ Non testé' : '⚪ Non configuré';
+        }
+    }
+
     async function testAIConnection() {
         const resultEl = document.getElementById('ai-test-result');
         const apiKey = document.getElementById('setting-ai-apikey')?.value || localStorage.getItem('crm_ai_apikey') || '';
@@ -1260,12 +1295,15 @@ const App = (() => {
 
         if (!apiKey) {
             if (resultEl) resultEl.innerHTML = '<span style="color:#dc2626">❌ Aucune clé API. Entrez une clé ci-dessus.</span>';
+            updateAIStatusBadge('none');
             return;
         }
 
         if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Test en cours...</span>';
+        updateAIStatusBadge('testing');
 
         try {
+            let success = false;
             if (provider === 'anthropic') {
                 const response = await fetch('https://api.anthropic.com/v1/messages', {
                     method: 'POST',
@@ -1286,10 +1324,10 @@ const App = (() => {
                     const data = await response.json();
                     const reply = data.content?.[0]?.text || 'OK';
                     if (resultEl) resultEl.innerHTML = `<span style="color:#16a34a">✅ Connecté! Modèle: ${model}<br>Réponse: "${reply}"</span>`;
-                    showToast('IA connectée avec succès!', 'success');
+                    success = true;
                 } else {
                     const err = await response.json().catch(() => ({}));
-                    if (resultEl) resultEl.innerHTML = `<span style="color:#dc2626">❌ Erreur ${response.status}: ${err.error?.message || 'Clé invalide'}</span>`;
+                    if (resultEl) resultEl.innerHTML = `<span style="color:#dc2626">❌ Erreur ${response.status}: ${err.error?.message || 'Clé invalide ou modèle incorrect'}</span>`;
                 }
             } else {
                 const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -1306,14 +1344,26 @@ const App = (() => {
                     const data = await response.json();
                     const reply = data.choices?.[0]?.message?.content || 'OK';
                     if (resultEl) resultEl.innerHTML = `<span style="color:#16a34a">✅ Connecté! Modèle: ${model}<br>Réponse: "${reply}"</span>`;
-                    showToast('IA connectée avec succès!', 'success');
+                    success = true;
                 } else {
                     const err = await response.json().catch(() => ({}));
-                    if (resultEl) resultEl.innerHTML = `<span style="color:#dc2626">❌ Erreur ${response.status}: ${err.error?.message || 'Clé invalide'}</span>`;
+                    if (resultEl) resultEl.innerHTML = `<span style="color:#dc2626">❌ Erreur ${response.status}: ${err.error?.message || 'Clé invalide ou modèle incorrect'}</span>`;
                 }
+            }
+
+            if (success) {
+                // Auto-save settings on successful test
+                localStorage.setItem('crm_ai_provider', provider);
+                localStorage.setItem('crm_ai_apikey', apiKey);
+                localStorage.setItem('crm_ai_model', model);
+                updateAIStatusBadge('connected');
+                showToast('IA connectée et paramètres sauvegardés!', 'success');
+            } else {
+                updateAIStatusBadge('error');
             }
         } catch (e) {
             if (resultEl) resultEl.innerHTML = `<span style="color:#dc2626">❌ Erreur réseau: ${e.message}</span>`;
+            updateAIStatusBadge('error');
         }
     }
 
@@ -2898,7 +2948,25 @@ const App = (() => {
             localStorage.setItem('crm_ai_provider', document.getElementById('setting-ai-provider')?.value || 'anthropic');
             localStorage.setItem('crm_ai_apikey', document.getElementById('setting-ai-apikey')?.value || '');
             localStorage.setItem('crm_ai_model', document.getElementById('setting-ai-model')?.value || '');
+            updateAIStatusBadge();
             showToast('Paramètres IA sauvegardés', 'success');
+        });
+
+        // AI provider change: show/hide relevant model groups and auto-select first model
+        document.getElementById('setting-ai-provider')?.addEventListener('change', (e) => {
+            const provider = e.target.value;
+            const modelSelect = document.getElementById('setting-ai-model');
+            if (!modelSelect) return;
+            const anthropicGroup = document.getElementById('ai-models-anthropic');
+            const openaiGroup = document.getElementById('ai-models-openai');
+            if (anthropicGroup) anthropicGroup.style.display = provider === 'anthropic' ? '' : 'none';
+            if (openaiGroup) openaiGroup.style.display = provider === 'openai' ? '' : 'none';
+            // Auto-select first visible option
+            if (provider === 'anthropic') {
+                modelSelect.value = 'claude-sonnet-4-20250514';
+            } else {
+                modelSelect.value = 'gpt-4o';
+            }
         });
 
         // Theme

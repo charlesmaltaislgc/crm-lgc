@@ -686,8 +686,8 @@ const Contracts = (() => {
                 await sendViaDocuSign(contractId, base64, att.name);
             }
 
-            document.getElementById('modal-confirm').classList.add('hidden');
-            document.getElementById('btn-confirm-action').classList.remove('hidden');
+            const dsModal = document.getElementById('modal-docusign-send');
+            if (dsModal) dsModal.classList.add('hidden');
             render('pending');
         } catch (e) {
             App.showToast('Erreur DocuSign: ' + e.message, 'error');
@@ -702,15 +702,94 @@ const Contracts = (() => {
     // ===== DOCUSIGN SEND MODAL (from contract list button) =====
 
     function openDocuSignSendModal(contractId) {
-        // Reuse the sign modal but switch to DocuSign tab directly
-        openSignModal(contractId);
-        setTimeout(() => {
-            const dsRadio = document.querySelector('input[name="sign-method"][value="docusign"]');
-            if (dsRadio) {
-                dsRadio.checked = true;
-                toggleSignMethod('docusign');
-            }
-        }, 100);
+        const contract = contracts.find(c => c.id === contractId);
+        if (!contract) {
+            App.showToast('Contrat introuvable', 'error');
+            return;
+        }
+
+        const deal = Deals.getById(contract.dealId);
+        const configured = isDocuSignConfigured();
+        const demoMode = Auth.isDemoMode();
+
+        // Build modal dynamically
+        let modal = document.getElementById('modal-docusign-send');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'modal-docusign-send';
+            modal.className = 'modal';
+            document.body.appendChild(modal);
+        }
+
+        // If not configured AND not demo mode, show config prompt
+        if (!configured && !demoMode) {
+            modal.innerHTML = `
+                <div class="modal-overlay" onclick="document.getElementById('modal-docusign-send').classList.add('hidden')"></div>
+                <div class="modal-content" style="z-index:1;max-width:480px">
+                    <div class="modal-header">
+                        <h3>DocuSign non configur\u00e9</h3>
+                        <button class="modal-close" onclick="document.getElementById('modal-docusign-send').classList.add('hidden')">&times;</button>
+                    </div>
+                    <div class="modal-body" style="text-align:center;padding:32px 20px">
+                        <div style="font-size:48px;margin-bottom:16px">&#9993;</div>
+                        <p style="font-size:15px;margin-bottom:8px"><strong>DocuSign n'est pas configur\u00e9</strong></p>
+                        <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
+                            Pour envoyer des contrats via DocuSign, vous devez d'abord configurer votre cl\u00e9 d'int\u00e9gration et votre compte dans les Param\u00e8tres.
+                        </p>
+                        <button class="btn btn-primary" onclick="document.getElementById('modal-docusign-send').classList.add('hidden'); App.navigate('settings')">
+                            Configurer DocuSign
+                        </button>
+                    </div>
+                </div>
+            `;
+            modal.classList.remove('hidden');
+            return;
+        }
+
+        // Normal send modal (works for both demo and real mode)
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="document.getElementById('modal-docusign-send').classList.add('hidden')"></div>
+            <div class="modal-content" style="z-index:1;max-width:560px">
+                <div class="modal-header">
+                    <h3 style="display:flex;align-items:center;gap:8px">
+                        <span style="color:#4e46e5">&#9993;</span> Envoyer via DocuSign
+                        ${demoMode && !configured ? '<span style="font-size:11px;padding:2px 8px;background:#f59e0b22;color:#f59e0b;border-radius:8px;font-weight:500">Mode d\u00e9mo</span>' : ''}
+                    </h3>
+                    <button class="modal-close" onclick="document.getElementById('modal-docusign-send').classList.add('hidden')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div style="background:var(--bg);padding:12px 16px;border-radius:var(--radius);margin-bottom:16px">
+                        <div style="font-weight:600;font-size:15px;margin-bottom:4px">${contract.clientName}</div>
+                        <div style="font-size:13px;color:var(--text-secondary)">
+                            ${contract.clientEmail ? '&#128231; ' + contract.clientEmail : '<span style="color:var(--danger)">&#9888; Aucun courriel — requis pour DocuSign</span>'}
+                        </div>
+                        <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">
+                            ${Deals.formatMoney(contract.amount)} &mdash; ${contract.description || ''}
+                        </div>
+                    </div>
+
+                    <div id="docusign-file-select" style="margin-bottom:16px">
+                        <!-- Populated by _populateDocuSignFileSelect -->
+                    </div>
+
+                    ${demoMode && !configured ? `
+                        <div style="padding:10px 14px;background:#f59e0b11;border:1px solid #f59e0b33;border-radius:var(--radius);font-size:12px;color:#92400e;margin-bottom:12px">
+                            <strong>Mode d\u00e9mo:</strong> L'envoi sera simul\u00e9. Aucun courriel ne sera r\u00e9ellement envoy\u00e9 via DocuSign.
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" onclick="document.getElementById('modal-docusign-send').classList.add('hidden')">Annuler</button>
+                    <button class="btn btn-primary" id="btn-send-docusign" style="background:#4e46e5" onclick="Contracts.confirmSendDocuSign('${contract.id}')">
+                        Envoyer via DocuSign
+                    </button>
+                </div>
+            </div>
+        `;
+        modal.classList.remove('hidden');
+
+        // Populate file picker
+        _populateDocuSignFileSelect(contract);
     }
 
     async function refreshDocuSignStatus(contractId) {

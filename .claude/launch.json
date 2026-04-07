@@ -4,7 +4,7 @@
     {
       "name": "crm",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["http-server", ".", "-p", "8080", "-c-1"],
+      "runtimeArgs": ["http-server", "C:\\Users\\Utilisateur\\Portes et Fenêtres LGC\\Mec-inov - Documents\\CRM-LGC", "-p", "8080", "-c-1"],
       "port": 8080
     }
   ]
